@@ -28,6 +28,23 @@ build/
 *.swo
 *~
 
+# AI Tools
+.claude/
+.codebuddy/
+.cursorrules
+.gemini/
+.github/
+.kiro/
+.mcp.json
+.qoder/
+.windsurfrules
+AGENTS.md
+CLAUDE.md
+CODEBUDDY.md
+GEMINI.md
+QODER.md
+opencode.jsonc
+
 # OS
 .DS_Store
 Thumbs.db
