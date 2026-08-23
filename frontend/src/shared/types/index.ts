@@ -108,3 +108,21 @@ export interface NotificationChannel {
   severity_filter: string | null
   created_at: string
 }
+
+export interface OidcSettings {
+  issuer_url: string
+  realm: string
+  client_id: string
+  client_secret: string
+  redirect_url: string
+  jwt_secret: string
+}
+
+export interface OidcTestResult {
+  status: 'connected' | 'failed'
+  message: string
+  discovery?: {
+    token_endpoint: string
+    authorization_endpoint: string
+  }
+}

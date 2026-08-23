@@ -174,3 +174,35 @@ AADS 프로젝트 변경 이력
 ### 테스트 결과
 - `cargo check`: ✅ 통과 (0 errors, 1 warning - upstream proc-macro-error2)
 - `npm run build`: ✅ 통과 (776KB JS, 47KB CSS)
+
+## [0.4.0] - 2026-08-24
+
+### Added
+
+#### 백엔드 - OIDC 설정 관리
+- **시스템 설정 테이블**: `system_settings` 테이블 추가 (키-값 기반 설정 저장)
+  - 마이그레이션: `003_system_settings.sql`
+  - OIDC 기본 설정 자동 삽입 (issuer_url, realm, client_id, client_secret, redirect_url, jwt_secret)
+- **OIDC 설정 API**:
+  - `GET /api/v1/settings/oidc` - OIDC 설정 조회
+  - `PUT /api/v1/settings/oidc` - OIDC 설정 업데이트
+  - `POST /api/v1/settings/oidc/test` - OIDC 서버 연결 테스트
+- **OIDC 연결 테스트**: Well-known discovery 엔드포인트 자동 탐지, token/authorization endpoint 검증
+
+#### 프론트엔드 - OIDC 설정 UI
+- **OIDC 설정 카드**: Settings 페이지에 OpenID Connect 설정 섹션 추가
+  - Issuer URL, Realm, Client ID 입력 필드
+  - Client Secret, JWT Secret 마스킹 처리 (표시/숨김 토글)
+  - Redirect URL 입력 필드
+  - 연결 테스트 버튼 (discovery endpoint 검증)
+  - 저장 버튼 (변경사항 저장)
+- **타입 정의**: `OidcSettings`, `OidcTestResult` 인터페이스 추가
+
+### Changed
+- `database.rs`: 새 마이그레이션 (003_system_settings.sql) 실행 추가
+- `main.rs`: OIDC 설정 라우트 2개 등록
+- `settings.rs`: OIDC 핸들러 3개 함수 추가 (get_oidc_settings, update_oidc_settings, test_oidc_connection)
+
+### 테스트 결과
+- `cargo check`: ✅ 통과 (0 errors)
+- `npm run build`: ✅ 통과

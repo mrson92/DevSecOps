@@ -68,6 +68,8 @@ async fn main() -> Result<()> {
         .route("/api/v1/notifications/channels", get(aads_api::handlers::settings::list_notification_channels).post(aads_api::handlers::settings::create_notification_channel))
         .route("/api/v1/notifications/channels/{id}", axum::routing::delete(aads_api::handlers::settings::delete_notification_channel))
         .route("/api/v1/notifications/channels/{id}/test", axum::routing::post(aads_api::handlers::settings::test_notification_channel))
+        .route("/api/v1/settings/oidc", get(aads_api::handlers::settings::get_oidc_settings).put(aads_api::handlers::settings::update_oidc_settings))
+        .route("/api/v1/settings/oidc/test", axum::routing::post(aads_api::handlers::settings::test_oidc_connection))
         .route("/api/v1/auth/me", get(aads_api::handlers::auth::get_current_user))
         .route("/api/v1/auth/oidc/login", get(aads_api::handlers::auth::oidc_login))
         .route("/api/v1/auth/oidc/callback", axum::routing::post(aads_api::handlers::auth::oidc_callback))

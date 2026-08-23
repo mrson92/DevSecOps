@@ -220,3 +220,180 @@ pub async fn test_notification_channel(
         "data": { "status": "sent", "message": "Test notification sent" }
     })))
 }
+
+// ============================================================
+// OIDC Settings
+// ============================================================
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct SystemSetting {
+    pub key: String,
+    pub value: String,
+    pub category: String,
+    pub description: Option<String>,
+    pub updated_at: String,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOidcSettingsRequest {
+    pub issuer_url: Option<String>,
+    pub realm: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub redirect_url: Option<String>,
+    pub jwt_secret: Option<String>,
+}
+
+pub async fn get_oidc_settings(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    let settings = sqlx::query_as::<_, SystemSetting>(
+        "SELECT key, value, category, description, updated_at, updated_by FROM system_settings WHERE category = 'oidc'"
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut oidc_map = serde_json::Map::new();
+    for setting in &settings {
+        let key = setting.key.strip_prefix("oidc.").unwrap_or(&setting.key);
+        oidc_map.insert(key.to_string(), json!(setting.value));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": oidc_map
+    })))
+}
+
+pub async fn update_oidc_settings(
+    State(state): State<AppState>,
+    Json(req): Json<UpdateOidcSettingsRequest>,
+) -> Result<Json<Value>, AppError> {
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+
+    let updates = [
+        ("oidc.issuer_url", req.issuer_url),
+        ("oidc.realm", req.realm),
+        ("oidc.client_id", req.client_id),
+        ("oidc.client_secret", req.client_secret),
+        ("oidc.redirect_url", req.redirect_url),
+        ("oidc.jwt_secret", req.jwt_secret),
+    ];
+
+    for (key, value) in updates {
+        if let Some(val) = value {
+            sqlx::query(
+                "INSERT INTO system_settings (key, value, category, updated_at) VALUES (?, 'oidc', ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
+            )
+            .bind(key)
+            .bind(&val)
+            .bind(&now)
+            .bind(&val)
+            .bind(&now)
+            .execute(&state.db)
+            .await?;
+        }
+    }
+
+    let settings = sqlx::query_as::<_, SystemSetting>(
+        "SELECT key, value, category, description, updated_at, updated_by FROM system_settings WHERE category = 'oidc'"
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut oidc_map = serde_json::Map::new();
+    for setting in &settings {
+        let key = setting.key.strip_prefix("oidc.").unwrap_or(&setting.key);
+        oidc_map.insert(key.to_string(), json!(setting.value));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": oidc_map,
+        "message": "OIDC settings updated successfully"
+    })))
+}
+
+pub async fn test_oidc_connection(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    let settings = sqlx::query_as::<_, SystemSetting>(
+        "SELECT key, value, category, description, updated_at, updated_by FROM system_settings WHERE category = 'oidc'"
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut oidc_map = serde_json::Map::new();
+    for setting in &settings {
+        let key = setting.key.strip_prefix("oidc.").unwrap_or(&setting.key);
+        oidc_map.insert(key.to_string(), json!(setting.value));
+    }
+
+    let issuer_url = oidc_map.get("issuer_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let realm = oidc_map.get("realm")
+        .and_then(|v| v.as_str())
+        .unwrap_or("master");
+
+    let client_id = oidc_map.get("client_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let _client_secret = oidc_map.get("client_secret")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if issuer_url.is_empty() || client_id.is_empty() {
+        return Ok(Json(json!({
+            "success": false,
+            "data": { "status": "failed", "message": "Issuer URL and Client ID are required" }
+        })));
+    }
+
+    let client = reqwest::Client::new();
+    let discovery_url = format!("{}/realms/{}/.well-known/openid-configuration", issuer_url, realm);
+
+    match client.get(&discovery_url).send().await {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                let discovery: serde_json::Value = resp.json().await
+                    .map_err(|e| AppError::Internal(format!("Failed to parse discovery document: {}", e)))?;
+
+                let token_endpoint = discovery["token_endpoint"].as_str().unwrap_or("");
+                let authorization_endpoint = discovery["authorization_endpoint"].as_str().unwrap_or("");
+
+                Ok(Json(json!({
+                    "success": true,
+                    "data": {
+                        "status": "connected",
+                        "message": "OIDC connection successful",
+                        "discovery": {
+                            "token_endpoint": token_endpoint,
+                            "authorization_endpoint": authorization_endpoint
+                        }
+                    }
+                })))
+            } else {
+                Ok(Json(json!({
+                    "success": false,
+                    "data": {
+                        "status": "failed",
+                        "message": format!("OIDC server returned status: {}", resp.status())
+                    }
+                })))
+            }
+        }
+        Err(e) => {
+            Ok(Json(json!({
+                "success": false,
+                "data": {
+                    "status": "failed",
+                    "message": format!("Failed to connect to OIDC server: {}", e)
+                }
+            })))
+        }
+    }
+}
