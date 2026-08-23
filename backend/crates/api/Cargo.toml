@@ -7,6 +7,7 @@ edition.workspace = true
 aads-core = { path = "../core" }
 aads-es = { path = "../es" }
 aads-db = { path = "../db" }
+aads-engine = { path = "../engine" }
 
 axum.workspace = true
 axum-extra = { version = "0.10", features = ["typed-header"] }

@@ -8,7 +8,11 @@ use std::sync::Arc;
 #[async_trait]
 pub trait ElasticSearchClientTrait: Send + Sync {
     async fn search(&self, index: &str, query: Value) -> Result<Value, AppError>;
+    async fn index_document(&self, index: &str, id: &str, doc: Value) -> Result<bool, AppError>;
+    async fn bulk_index(&self, index: &str, docs: Vec<(String, Value)>) -> Result<Value, AppError>;
     async fn health_check(&self) -> Result<bool, AppError>;
+    async fn create_index(&self, index: &str, mapping: Value) -> Result<bool, AppError>;
+    async fn index_exists(&self, index: &str) -> Result<bool, AppError>;
 }
 
 pub struct AppState {

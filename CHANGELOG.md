@@ -74,12 +74,48 @@ AADS 프로젝트 변경 이력
 | rule-009 | Data Exfiltration | threshold | high |
 | rule-010 | Port Scan / Enumeration | threshold | medium |
 
-## [0.2.0] - 예정
+## [0.2.0] - 2026-08-23
+
+### Added
+
+#### 백엔드 (Rust) - 룰 엔진
+- engine 크레이트: aads-engine (CEL 룰 엔진)
+- `crates/engine/src/cel.rs`: CEL 표현식 컴파일 및 평가 (CelEvaluator)
+- `crates/engine/src/engine.rs`: 룰 실행 엔진 (RuleEngine)
+  - `load_rules()`: DB에서 활성 룰 로드 및 CEL 컴파일
+  - `execute_rule()`: 단일 룰 실행
+  - `fetch_logs_from_es()`: ElasticSearch에서 로그 수집 (5초 타임아웃)
+  - `save_detection()`: 탐지 결과 저장
+  - `run_all_rules()`: 전체 룰 일괄 실행
+- `crates/engine/src/types.rs`: 타입 정의 (LogEntry, DetectionResult, RuleContext)
+
+#### API 엔드포인트
+- `POST /api/v1/engine/run` - 전체 룰 실행
+- `POST /api/v1/engine/run/{rule_id}` - 단일 룰 실행
+
+#### ES 클라이언트 확장
+- `index_document()`: 단일 문서 인덱싱
+- `bulk_index()`: 벌크 인덱싱
+- `create_index()`: 인덱스 생성
+- `index_exists()`: 인덱스 존재 확인
+
+#### 에러 처리
+- `AppError::RuleEngine`: 룰 엔진 에러 variant 추가
+
+### Changed
+- `ElasticSearchClientTrait`: 4개 메서드 추가 (index_document, bulk_index, create_index, index_exists)
+- 룰 엔진: ES 연결 실패 시 graceful handling (빈 결과 반환)
+- ES 검색: 5초 타임아웃 적용
+
+### 테스트 결과
+- `cargo check`: ✅ 통과 (0 errors, 1 warning)
+- `cargo build --release`: ✅ 통과
+- Engine API 테스트: ✅ 10개 룰 일괄 실행 성공
+
+## [0.3.0] - 예정
 
 ### planned
-- ElasticSearch 로그 수집 파이프라인
-- CEL 기반 룰 엔진
-- 탐지 로직 구현
-- Docker Compose 전체 배포
+- Docker Compose 전체 배포 테스트
 - Keycloak OIDC 연동
 - 프로덕션 배포 가이드
+- 프론트엔드 룰 엔진 연동 UI

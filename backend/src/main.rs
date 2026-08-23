@@ -45,6 +45,8 @@ async fn main() -> Result<()> {
         .route("/api/v1/rules/{id}", get(aads_api::handlers::rules::get_rule))
         .route("/api/v1/detections", get(aads_api::handlers::detections::list_detections))
         .route("/api/v1/dashboard/stats", get(aads_api::handlers::dashboard::get_stats))
+        .route("/api/v1/engine/run", axum::routing::post(aads_api::handlers::engine::run_rules))
+        .route("/api/v1/engine/run/{rule_id}", axum::routing::post(aads_api::handlers::engine::run_single_rule))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);

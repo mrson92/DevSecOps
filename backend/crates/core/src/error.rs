@@ -27,6 +27,9 @@ pub enum AppError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Rule engine error: {0}")]
+    RuleEngine(String),
 }
 
 impl IntoResponse for AppError {
@@ -40,6 +43,7 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             AppError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
+            AppError::RuleEngine(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
         };
 
         let body = json!({

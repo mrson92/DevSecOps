@@ -6,6 +6,7 @@ members = [
     "crates/api",
     "crates/es",
     "crates/db",
+    "crates/engine",
 ]
 
 [workspace.package]
@@ -93,6 +94,7 @@ aads-core = { path = "crates/core" }
 aads-api = { path = "crates/api" }
 aads-es = { path = "crates/es" }
 aads-db = { path = "crates/db" }
+aads-engine = { path = "crates/engine" }
 
 tokio.workspace = true
 axum.workspace = true

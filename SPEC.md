@@ -913,12 +913,26 @@ volumes:
 | API 엔드포인트 테스트 | ✅ 5/5 통과 |
 | 프론트엔드-백엔드 연동 | ✅ 확인 |
 
-### Phase 2: ElasticSearch 연동 (예정)
+### Phase 2: 룰 엔진 구현 (완료)
 
-| 항목 | 상태 |
-|------|------|
-| ElasticSearch 로그 수집 | 🔲 예정 |
-| 룰 엔진 구현 (CEL) | 🔲 예정 |
-| 탐지 로직 구현 | 🔲 예정 |
-| Docker Compose 전체 배포 | 🔲 예정 |
-| Keycloak OIDC 연동 | 🔲 예정 |
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| CEL 룰 엔진 | ✅ 완료 | cel-interpreter 기반 |
+| 룰 실행 로직 | ✅ 완료 | RuleEngine (load, execute, save) |
+| ES 클라이언트 확장 | ✅ 완료 | index, bulk, create, exists |
+| Engine API | ✅ 완료 | POST /api/v1/engine/run |
+| ES 타임아웃 처리 | ✅ 완료 | 5초 타임아웃, graceful handling |
+| Docker Compose 전체 배포 | 🔲 예정 | Docker 미설치 |
+| Keycloak OIDC 연동 | 🔲 예정 | |
+
+### API 엔드포인트 (전체)
+
+| 메서드 | 경로 | 설명 | 상태 |
+|--------|------|------|------|
+| GET | `/health` | 헬스체크 | ✅ |
+| GET | `/api/v1/rules` | 룰 목록 | ✅ |
+| GET | `/api/v1/rules/:id` | 룰 상세 | ✅ |
+| GET | `/api/v1/detections` | 탐지 목록 | ✅ |
+| GET | `/api/v1/dashboard/stats` | 대시보드 통계 | ✅ |
+| POST | `/api/v1/engine/run` | 전체 룰 실행 | ✅ |
+| POST | `/api/v1/engine/run/:id` | 단일 룰 실행 | ✅ |
