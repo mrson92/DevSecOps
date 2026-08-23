@@ -56,3 +56,5 @@ backend/.env
 
 # SBOM
 *.cdx.json
+# Added by code-review-graph
+.code-review-graph/

@@ -1,4 +1,4 @@
-FROM rust:1.75-slim AS builder
+FROM docker.io/library/rust:1.90-slim AS builder
 
 WORKDIR /app
 
@@ -7,11 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
 COPY crates/ crates/
+COPY migrations/ migrations/
 
 RUN cargo build --release --bin aads-backend
 
-FROM debian:bookworm-slim AS runtime
+FROM docker.io/library/debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libssl3 curl && \

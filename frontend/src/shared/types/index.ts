@@ -72,3 +72,39 @@ export interface PaginationParams {
   sort?: string
   order?: 'asc' | 'desc'
 }
+
+export interface Report {
+  id: string
+  report_type: string
+  title: string
+  period_start: string
+  period_end: string
+  content: string
+  summary: string | null
+  format: string
+  status: string
+  generated_at: string
+}
+
+export interface DataSource {
+  id: string
+  name: string
+  type: string
+  config: string
+  target: string
+  field_mapping: string
+  enabled: boolean
+  is_primary: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface NotificationChannel {
+  id: string
+  name: string
+  type: string
+  config: string
+  enabled: boolean
+  severity_filter: string | null
+  created_at: string
+}

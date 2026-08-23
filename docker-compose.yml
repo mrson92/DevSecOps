@@ -14,6 +14,7 @@ services:
       - AADS_OIDC__ISSUER_URL=http://keycloak:8080/realms/master
       - AADS_OIDC__CLIENT_ID=${OIDC_CLIENT_ID:-aads}
       - AADS_OIDC__CLIENT_SECRET=${OIDC_CLIENT_SECRET:-secret}
+      - AADS_OIDC__REDIRECT_URL=${OIDC_REDIRECT_URL:-http://localhost:3000/auth/callback}
       - AADS_OIDC__JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - RUST_LOG=info,aads_backend=debug,tower_http=debug
       - TZ=Asia/Seoul

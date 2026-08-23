@@ -1,14 +1,20 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import api from '@/shared/lib/api'
 import type { Rule, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { RuleFormDialog } from '../components/RuleFormDialog'
 
 export function RulesPage() {
+  const [page, setPage] = useState(1)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const size = 20
+
   const { data: rulesData, isLoading } = useQuery<ApiResponse<Rule[]>>({
-    queryKey: ['rules'],
-    queryFn: () => api.get('/rules').then((res) => res.data),
+    queryKey: ['rules', page],
+    queryFn: () => api.get(`/rules?page=${page}&size=${size}`).then((res) => res.data),
   })
 
   if (isLoading) {
@@ -17,12 +23,13 @@ export function RulesPage() {
 
   const rules = rulesData?.data ?? []
   const meta = rulesData?.meta
+  const totalPages = meta ? Math.ceil(meta.total / size) : 1
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Rules</h1>
-        <Button>Create Rule</Button>
+        <Button onClick={() => setDialogOpen(true)}>Create Rule</Button>
       </div>
 
       <div className="grid gap-4">
@@ -74,15 +81,30 @@ export function RulesPage() {
             Showing {rules.length} of {meta.total} rules
           </span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={meta.page <= 1}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
               Previous
             </Button>
-            <Button variant="outline" size="sm">
+            <span className="px-3 py-1 text-xs">
+              {page} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
               Next
             </Button>
           </div>
         </div>
       )}
+
+      <RuleFormDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </div>
   )
 }

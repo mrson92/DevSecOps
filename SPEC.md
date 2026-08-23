@@ -925,14 +925,71 @@ volumes:
 | Docker Compose 전체 배포 | 🔲 예정 | Docker 미설치 |
 | Keycloak OIDC 연동 | 🔲 예정 | |
 
+### Phase 3: 룰 엔진 & ES 연동 (완료)
+
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| Rule CRUD API | ✅ 완료 | 생성/수정/삭제 + 자동 버전업 |
+| 룰 테스트 API | ✅ 완료 | POST /rules/{id}/test |
+| Detection 상태 변경 | ✅ 완료 | PATCH /detections/{id} |
+| 프론트엔드 룰 생성/수정 UI | ✅ 완료 | RuleFormDialog |
+| 프론트엔드 룰 테스트 UI | ✅ 완료 | RuleTestPanel |
+| 프론트엔드 탐지 처리 UI | ✅ 완료 | Acknowledge/Resolve |
+
+### Phase 4: 탐지 파이프라인 (완료)
+
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| 스케줄러 | ✅ 완료 | 60초 간격, 세마포어 기반 동시 실행 제어 |
+| 알림 디스패처 | ✅ 완료 | 웹훅 기반 (Slack/Teams) |
+| 배치 평가 | ✅ 완료 | 스케줄러에 통합 |
+| 탐지 저장/조회 API | ✅ 완료 | Phase 3에서 구현 |
+| 상태 머신 | ✅ 완료 | open -> acknowledged -> resolved/fp |
+| 리포트 생성기 | ✅ 완료 | 일/주/월 보고서 자동 생성 |
+| 탐지 필터링 | ✅ 완료 | 심각도/상태/기간별 필터 |
+
+### Phase 5: 프론트엔드 MVP (완료)
+
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| 대시보드 차트 | ✅ 완료 | Recharts 기반 (타임라인, 심각도, Top 룰/IP) |
+| 룰 관리 UI | ✅ 완료 | 목록, 생성/수정, 테스트 |
+| 탐지 현황 | ✅ 완료 | 목록, 필터, 상세, 상태 변경 |
+| 리포트 | ✅ 완료 | 목록, 일/주/월 생성 |
+| 설정 | ✅ 완료 | 데이터소스/알림 채널 CRUD |
+| 인증 | ✅ 완료 | Keycloak OIDC 연동 |
+
 ### API 엔드포인트 (전체)
 
 | 메서드 | 경로 | 설명 | 상태 |
 |--------|------|------|------|
 | GET | `/health` | 헬스체크 | ✅ |
 | GET | `/api/v1/rules` | 룰 목록 | ✅ |
+| POST | `/api/v1/rules` | 룰 생성 | ✅ |
 | GET | `/api/v1/rules/:id` | 룰 상세 | ✅ |
-| GET | `/api/v1/detections` | 탐지 목록 | ✅ |
+| PUT | `/api/v1/rules/:id` | 룰 수정 | ✅ |
+| DELETE | `/api/v1/rules/:id` | 룰 삭제 | ✅ |
+| POST | `/api/v1/rules/:id/test` | 룰 테스트 | ✅ |
+| GET | `/api/v1/detections` | 탐지 목록 (필터 지원) | ✅ |
+| GET | `/api/v1/detections/:id` | 탐지 상세 | ✅ |
+| PATCH | `/api/v1/detections/:id` | 탐지 상태 변경 | ✅ |
 | GET | `/api/v1/dashboard/stats` | 대시보드 통계 | ✅ |
+| GET | `/api/v1/dashboard/timeline` | 24시간 타임라인 | ✅ |
+| GET | `/api/v1/dashboard/top-rules` | 상위 룰 | ✅ |
+| GET | `/api/v1/dashboard/top-ips` | 상위 IP | ✅ |
 | POST | `/api/v1/engine/run` | 전체 룰 실행 | ✅ |
 | POST | `/api/v1/engine/run/:id` | 단일 룰 실행 | ✅ |
+| GET | `/api/v1/reports` | 리포트 목록 | ✅ |
+| POST | `/api/v1/reports` | 리포트 생성 | ✅ |
+| GET | `/api/v1/reports/:id` | 리포트 상세 | ✅ |
+| GET | `/api/v1/data-sources` | 데이터소스 목록 | ✅ |
+| POST | `/api/v1/data-sources` | 데이터소스 생성 | ✅ |
+| DELETE | `/api/v1/data-sources/:id` | 데이터소스 삭제 | ✅ |
+| POST | `/api/v1/data-sources/:id/test` | 데이터소스 테스트 | ✅ |
+| GET | `/api/v1/notifications/channels` | 알림 채널 목록 | ✅ |
+| POST | `/api/v1/notifications/channels` | 알림 채널 생성 | ✅ |
+| DELETE | `/api/v1/notifications/channels/:id` | 알림 채널 삭제 | ✅ |
+| POST | `/api/v1/notifications/channels/:id/test` | 알림 채널 테스트 | ✅ |
+| GET | `/api/v1/auth/me` | 현재 사용자 | ✅ |
+| GET | `/api/v1/auth/oidc/login` | OIDC 로그인 | ✅ |
+| POST | `/api/v1/auth/oidc/callback` | OIDC 콜백 | ✅ |

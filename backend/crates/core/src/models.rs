@@ -44,9 +44,10 @@ pub struct Detection {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Report {
     pub id: String,
+    #[sqlx(rename = "type")]
     pub report_type: String,
     pub title: String,
     pub period_start: String,
@@ -67,6 +68,65 @@ pub struct DashboardStats {
     pub medium_count: i64,
     pub low_count: i64,
     pub active_rules: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateRuleRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub severity: String,
+    pub rule_type: String,
+    pub condition: String,
+    pub window_sec: Option<i32>,
+    pub slide_sec: Option<i32>,
+    pub group_by: Option<String>,
+    pub actions: Option<String>,
+    pub mitre_tactics: Option<String>,
+    pub mitre_techniques: Option<String>,
+    pub references: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateRuleRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub severity: Option<String>,
+    pub enabled: Option<bool>,
+    pub condition: Option<String>,
+    pub window_sec: Option<i32>,
+    pub slide_sec: Option<i32>,
+    pub group_by: Option<String>,
+    pub actions: Option<String>,
+    pub mitre_tactics: Option<String>,
+    pub mitre_techniques: Option<String>,
+    pub references: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateDetectionRequest {
+    pub status: Option<String>,
+    pub assignee: Option<String>,
+    pub resolution_note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestRuleRequest {
+    pub test_type: String,
+    pub time_range_start: Option<String>,
+    pub time_range_end: Option<String>,
+    pub sample_logs: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestRuleResult {
+    pub id: String,
+    pub rule_id: String,
+    pub test_type: String,
+    pub matched_count: u32,
+    pub matched_logs: Vec<serde_json::Value>,
+    pub execution_time_ms: u64,
+    pub status: String,
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

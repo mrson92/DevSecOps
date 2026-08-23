@@ -112,10 +112,65 @@ AADS 프로젝트 변경 이력
 - `cargo build --release`: ✅ 통과
 - Engine API 테스트: ✅ 10개 룰 일괄 실행 성공
 
-## [0.3.0] - 예정
+## [0.3.0] - 2026-08-23
 
-### planned
-- Docker Compose 전체 배포 테스트
-- Keycloak OIDC 연동
-- 프로덕션 배포 가이드
-- 프론트엔드 룰 엔진 연동 UI
+### Added
+
+#### 백엔드 - Phase 3
+- **Rule CRUD API**:
+  - `POST /api/v1/rules` - 룰 생성
+  - `PUT /api/v1/rules/{id}` - 룰 수정 (자동 버전업)
+  - `DELETE /api/v1/rules/{id}` - 룰 소프트 삭제 (enabled=false)
+- **룰 테스트 API**: `POST /api/v1/rules/{id}/test` - 드라이런 테스트 실행
+- **탐지 상태 변경 API**: `PATCH /api/v1/detections/{id}` - 상태 업데이트 (acknowledged, resolved, false_positive)
+- **요청 모델**: `CreateRuleRequest`, `UpdateRuleRequest`, `UpdateDetectionRequest`, `TestRuleRequest`
+
+#### 백엔드 - Phase 4
+- **스케줄러**: 60초 간격 전체 룰 일괄 실행, 세마포어 기반 동시 실행 제어 (최대 3개)
+- **알림 디스패처**: 웹훅 기반 알림 발송 (Slack/Teams 호환)
+- **리포트 생성기**: `ReportGenerator` - 일/주/월 보고서 자동 생성, JSON 출력
+- **리포트 API**: `POST /api/v1/reports` - 리포트 생성, `GET /api/v1/reports` - 목록 조회
+
+#### 백엔드 - Phase 5
+- **대시보드 확장**: 타임라인, Top 룰, Top IP API 추가
+  - `GET /api/v1/dashboard/timeline` - 24시간 타임라인
+  - `GET /api/v1/dashboard/top-rules` - 상위 10개 룰
+  - `GET /api/v1/dashboard/top-ips` - 상위 10개 IP
+- **설정 API**: 데이터소스/알림 채널 CRUD
+  - `GET/POST /api/v1/data-sources` - 데이터소스 목록/생성
+  - `POST /api/v1/data-sources/{id}/test` - 연결 테스트
+  - `GET/POST /api/v1/notifications/channels` - 알림 채널 목록/생성
+  - `POST /api/v1/notifications/channels/{id}/test` - 테스트 발송
+- **인증 모듈**: Keycloak OIDC 연동
+  - `GET /api/v1/auth/me` - 현재 사용자 정보
+  - `GET /api/v1/auth/oidc/login` - OIDC 로그인 URL
+  - `POST /api/v1/auth/oidc/callback` - OIDC 콜백 처리
+
+#### 프론트엔드 - Phase 3
+- **룰 생성/수정 다이얼로그**: `RuleFormDialog` - 이름, 심각도, 타입, CEL 조건, 윈도우 설정
+- **룰 테스트 패널**: `RuleTestPanel` - 원클릭 드라이런, 매칭 결과/실행 시간 표시
+- **룰 상세 페이지**: 수정/삭제 기능, 테스트 패널 통합
+- **룰 목록 페이지**: 페이지네이션 연동, 룰 생성 버튼
+- **탐지 상세 페이지**: Acknowledge/Resolve 상태 변경 버튼
+
+#### 프론트엔드 - Phase 4
+- **대시보드 차트**: Recharts 기반 시각화
+  - `TimelineChart` - 24시간 탐지 타임라인
+  - `SeverityChart` - 심각도별 파이 차트
+  - `TopRulesChart` - 상위 룰 가로 막대 차트
+  - `TopIpsChart` - 상위 IP 가로 막대 차트
+- **탐지 필터링**: 심각도/상태별 필터 UI
+- **리포트 페이지**: 리포트 목록, 일/주/월 생성 버튼
+- **설정 페이지**: 데이터소스/알림 채널 CRUD UI
+
+### Changed
+- `main.rs`: 스케줄러 백그라운드 태스크 시작, 신규 라우트 추가
+- `engine` 크레이트: `scheduler`, `report` 모듈 추가, `reqwest` 의존성 추가
+- `api` 크레이트: `auth`, `reports`, `settings` 핸들러 추가, `reqwest` 의존성 추가
+- `models.rs`: 요청 구조체 추가 (CreateRuleRequest, UpdateRuleRequest, UpdateDetectionRequest, TestRuleRequest)
+- `config.rs`: OidcConfig에 realm 필드 추가
+- `docker-compose.yml`: OIDC redirect_url 환경 변수 추가
+
+### 테스트 결과
+- `cargo check`: ✅ 통과 (0 errors, 1 warning - upstream proc-macro-error2)
+- `npm run build`: ✅ 통과 (776KB JS, 47KB CSS)

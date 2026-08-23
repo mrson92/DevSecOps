@@ -44,6 +44,7 @@ pub struct ElasticsearchConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct OidcConfig {
     pub issuer_url: String,
+    pub realm: Option<String>,
     pub client_id: String,
     pub client_secret: String,
     pub redirect_url: String,

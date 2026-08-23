@@ -1,17 +1,31 @@
-import { useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/shared/lib/api'
 import type { Rule, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { RuleFormDialog } from '../components/RuleFormDialog'
+import { RuleTestPanel } from '../components/RuleTestPanel'
 
 export function RuleDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [editOpen, setEditOpen] = useState(false)
 
   const { data: ruleData, isLoading } = useQuery<ApiResponse<Rule>>({
     queryKey: ['rule', id],
     queryFn: () => api.get(`/rules/${id}`).then((res) => res.data),
     enabled: !!id,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/rules/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      navigate('/rules')
+    },
   })
 
   if (isLoading) {
@@ -32,8 +46,20 @@ export function RuleDetailPage() {
           <p className="text-muted-foreground">{rule.description}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">Test Rule</Button>
-          <Button>Edit Rule</Button>
+          <Button variant="outline" onClick={() => setEditOpen(true)}>
+            Edit Rule
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (confirm('Are you sure you want to delete this rule?')) {
+                deleteMutation.mutate()
+              }
+            }}
+            disabled={deleteMutation.isPending}
+          >
+            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+          </Button>
         </div>
       </div>
 
@@ -89,6 +115,14 @@ export function RuleDetailPage() {
           </pre>
         </CardContent>
       </Card>
+
+      <RuleTestPanel ruleId={rule.id} />
+
+      <RuleFormDialog
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        rule={rule}
+      />
     </div>
   )
 }
