@@ -1,0 +1,25 @@
+[package]
+name = "aads-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aads-core = { path = "../core" }
+aads-es = { path = "../es" }
+aads-db = { path = "../db" }
+
+axum.workspace = true
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower.workspace = true
+tower-http.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+validator.workspace = true
+tracing.workspace = true
+jsonwebtoken.workspace = true
+futures.workspace = true

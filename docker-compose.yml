@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: aads-backend:${VERSION:-latest}
+    environment:
+      - AADS_SERVER__ADDR=0.0.0.0:8080
+      - AADS_DATABASE__URL=sqlite:/data/aads.db?mode=rwc
+      - AADS_ELASTICSEARCH__URL=http://elasticsearch:9200
+      - AADS_ELASTICSEARCH__INDEX_PREFIX=aads
+      - AADS_OIDC__ISSUER_URL=http://keycloak:8080/realms/master
+      - AADS_OIDC__CLIENT_ID=${OIDC_CLIENT_ID:-aads}
+      - AADS_OIDC__CLIENT_SECRET=${OIDC_CLIENT_SECRET:-secret}
+      - AADS_OIDC__JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - RUST_LOG=info,aads_backend=debug,tower_http=debug
+      - TZ=Asia/Seoul
+    volumes:
+      - aads_data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: aads-frontend:${VERSION:-latest}
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - cluster.routing.allocation.disk.threshold_enabled=false
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "127.0.0.1:9200:9200"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q green"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  aads_data:
+  es_data:

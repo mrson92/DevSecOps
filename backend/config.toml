@@ -1,0 +1,22 @@
+[server]
+addr = "0.0.0.0:8080"
+worker_threads = 4
+
+[database]
+url = "sqlite:aads.db?mode=rwc"
+max_connections = 5
+enable_wal = true
+
+[elasticsearch]
+url = "http://localhost:9200"
+username = "elastic"
+password = ""
+index_prefix = "aads"
+request_timeout_secs = 30
+
+[oidc]
+issuer_url = "http://localhost:8080/realms/master"
+client_id = "aads"
+client_secret = ""
+redirect_url = "http://localhost:3000/auth/callback"
+jwt_secret = "change-me-in-production"

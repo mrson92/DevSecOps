@@ -1,0 +1,113 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "crates/core",
+    "crates/api",
+    "crates/es",
+    "crates/db",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["AADS Team"]
+license = "MIT"
+rust-version = "1.75"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "util"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "chrono", "json"] }
+
+# ElasticSearch
+elasticsearch = { version = "8.17.0-alpha.1", features = ["rustls-tls"] }
+
+# Auth
+jsonwebtoken = "9"
+oauth2 = "4"
+
+# Config
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# Validation
+validator = { version = "0.19", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.28"
+opentelemetry = { version = "0.27" }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# DateTime
+chrono = { version = "0.4", features = ["serde"] }
+
+# Scheduler
+tokio-cron-scheduler = "0.13"
+
+# Cel
+cel-interpreter = "0.7"
+
+# Async
+async-trait = "0.1"
+futures = "0.3"
+
+# Hashing
+sha2 = "0.10"
+hex = "0.4"
+
+# Rate limiting
+governor = "0.8"
+
+[package]
+name = "aads-backend"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "aads-backend"
+path = "src/main.rs"
+
+[dependencies]
+aads-core = { path = "crates/core" }
+aads-api = { path = "crates/api" }
+aads-es = { path = "crates/es" }
+aads-db = { path = "crates/db" }
+
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+figment.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+anyhow.workspace = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

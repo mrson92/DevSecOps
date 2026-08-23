@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+target/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+docker-compose.override.yml
+
+# Rust
+Cargo.lock
+
+# Frontend
+frontend/.vite/
+
+# Backend
+backend/.env
+
+# Documents
+*.docx
+*.pdf
+*.xlsx
+*.xls
+
+# SBOM
+*.cdx.json

@@ -1,0 +1,27 @@
+{
+  "name": "aads",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Abnormal Access Detection System",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && cargo run",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && cargo build --release",
+    "build": "npm run build:frontend && npm run build:backend",
+    "test:frontend": "cd frontend && npm run test",
+    "test:backend": "cd backend && cargo test",
+    "test": "npm run test:frontend && npm run test:backend",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "cd backend && cargo clippy -- -D warnings",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

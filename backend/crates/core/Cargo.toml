@@ -1,0 +1,18 @@
+[package]
+name = "aads-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+validator.workspace = true
+cel-interpreter.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+figment.workspace = true
+tokio.workspace = true
