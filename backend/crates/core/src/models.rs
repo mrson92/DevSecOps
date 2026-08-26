@@ -150,3 +150,17 @@ pub struct PaginationMeta {
     pub size: u32,
     pub total: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DataSource {
+    pub id: String,
+    pub name: String,
+    pub r#type: String,
+    pub config: String,
+    pub target: String,
+    pub field_mapping: String,
+    pub enabled: bool,
+    pub is_primary: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}

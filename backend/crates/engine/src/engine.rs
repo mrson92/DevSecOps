@@ -4,72 +4,86 @@ use sqlx::SqlitePool;
 use tracing::{info, warn, error};
 use uuid::Uuid;
 
-use crate::cel::CelEvaluator;
-use crate::types::{DetectionResult, LogEntry, RuleContext};
+use crate::rule_eval::NativeRuleEvaluator;
+use crate::types::{DetectionResult, LogEntry};
 use aads_core::error::AppError;
-use aads_core::models::Rule;
+use aads_core::models::{Rule, DataSource};
 use aads_core::state::ElasticSearchClientTrait;
 
 pub struct RuleEngine {
     db: SqlitePool,
     es: Arc<dyn ElasticSearchClientTrait>,
-    evaluator: CelEvaluator,
 }
 
 impl RuleEngine {
     pub fn new(db: SqlitePool, es: Arc<dyn ElasticSearchClientTrait>) -> Self {
-        Self {
-            db,
-            es,
-            evaluator: CelEvaluator::new(),
-        }
+        Self { db, es }
     }
 
-    pub async fn load_rules(&mut self) -> Result<Vec<Rule>, AppError> {
+    pub async fn load_rules(&self) -> Result<Vec<Rule>, AppError> {
         let rules = sqlx::query_as::<_, Rule>("SELECT * FROM rules WHERE enabled = 1")
             .fetch_all(&self.db)
             .await
             .map_err(|e| AppError::Internal(format!("Failed to load rules: {}", e)))?;
 
-        for rule in &rules {
-            if let Err(e) = self.evaluator.compile(&rule.id, &rule.condition) {
-                warn!("Failed to compile rule {}: {}", rule.id, e);
-            }
-        }
-
         info!("Loaded {} enabled rules", rules.len());
         Ok(rules)
     }
 
-    pub async fn execute_rule(&self, rule: &Rule, logs: Vec<LogEntry>) -> Result<DetectionResult, AppError> {
-        let log_values: Vec<serde_json::Value> = logs.iter().map(|l| {
-            serde_json::to_value(l).unwrap_or_default()
-        }).collect();
+    pub async fn load_data_sources(&self) -> Result<Vec<DataSource>, AppError> {
+        let sources = sqlx::query_as::<_, DataSource>(
+            "SELECT * FROM data_sources WHERE enabled = true ORDER BY is_primary DESC"
+        )
+        .fetch_all(&self.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to load data sources: {}", e)))?;
 
-        let window_end = Utc::now().to_rfc3339();
-        let window_start = Utc::now()
-            .checked_sub_signed(chrono::Duration::seconds(rule.window_sec as i64))
-            .unwrap_or_default()
-            .to_rfc3339();
+        info!("Loaded {} enabled data sources", sources.len());
+        Ok(sources)
+    }
 
-        let context = RuleContext {
-            logs: log_values,
-            window_start,
-            window_end,
-            group_key: None,
+    fn create_es_client_from_config(config: &str) -> Result<Box<dyn ElasticSearchClientTrait>, AppError> {
+        let parsed: serde_json::Value = serde_json::from_str(config)
+            .map_err(|e| AppError::Internal(format!("Invalid config JSON: {}", e)))?;
+        let url = parsed["url"].as_str()
+            .ok_or_else(|| AppError::Internal("Missing 'url' in ES config".into()))?;
+
+        let es_config = aads_core::config::ElasticsearchConfig {
+            url: url.to_string(),
+            username: parsed["username"].as_str().map(|s| s.to_string()),
+            password: parsed["password"].as_str().map(|s| s.to_string()),
+            index_prefix: parsed["index_prefix"].as_str().unwrap_or("aads").to_string(),
+            request_timeout_secs: parsed["request_timeout_secs"].as_u64().unwrap_or(30),
         };
 
-        let detected = self.evaluator.evaluate(&rule.id, &context)
-            .map_err(|e| AppError::RuleEngine(format!("Evaluation failed: {}", e)))?;
+        let client = aads_es::client::ElasticSearchClient::new(&es_config)?;
+        Ok(Box::new(client))
+    }
+
+    pub async fn execute_rule(&self, rule: &Rule, logs: Vec<LogEntry>) -> Result<DetectionResult, AppError> {
+        let evaluator = NativeRuleEvaluator::compile(&rule.condition)
+            .map_err(|e| AppError::RuleEngine(format!("Rule compile error: {}", e)))?;
+
+        let threshold = evaluator.get_threshold(&rule.condition);
+        let matched_count = evaluator.count_matched(&logs);
+        let detected = matched_count as u32 >= threshold;
+
+        let matched_entries = if detected {
+            logs.into_iter()
+                .filter(|log| evaluator.evaluate(&[log.clone()]))
+                .collect()
+        } else {
+            vec![]
+        };
 
         Ok(DetectionResult {
             rule_id: rule.id.clone(),
             rule_name: rule.name.clone(),
             severity: rule.severity.clone(),
             detected,
-            matched_count: if detected { logs.len() as u32 } else { 0 },
-            group_key: context.group_key,
-            matched_entries: if detected { logs } else { vec![] },
+            matched_count: matched_count as u32,
+            group_key: None,
+            matched_entries,
             timestamp: Utc::now().to_rfc3339(),
         })
     }
@@ -83,7 +97,7 @@ impl RuleEngine {
         let now = Utc::now().to_rfc3339();
 
         sqlx::query(
-            r#"INSERT INTO detections (id, rule_id, rule_version, detected_at, window_start, window_end, matched_count, group_key, context, status, created_at)
+            r#"INSERT INTO rule_executions (id, rule_id, rule_version, detected_at, window_start, window_end, matched_count, group_key, context, status, created_at)
                VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, 'open', ?)"#
         )
         .bind(&detection_id)
@@ -104,6 +118,10 @@ impl RuleEngine {
     }
 
     pub async fn fetch_logs_from_es(&self, rule: &Rule) -> Result<Vec<LogEntry>, AppError> {
+        self.fetch_logs_from_es_with_client(rule, self.es.as_ref()).await
+    }
+
+    async fn fetch_logs_from_es_with_client(&self, rule: &Rule, es_client: &dyn ElasticSearchClientTrait) -> Result<Vec<LogEntry>, AppError> {
         let query = serde_json::json!({
             "query": {
                 "bool": {
@@ -123,7 +141,7 @@ impl RuleEngine {
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            self.es.search("logs", query)
+            es_client.search("aads-logs", query)
         )
         .await
         .map_err(|_| AppError::ElasticSearch("ES search timeout".to_string()))?
@@ -157,12 +175,38 @@ impl RuleEngine {
         Ok(logs)
     }
 
-    pub async fn run_all_rules(&mut self) -> Result<Vec<DetectionResult>, AppError> {
+    pub async fn run_all_rules(&self) -> Result<Vec<DetectionResult>, AppError> {
         let rules = self.load_rules().await?;
+        let data_sources = self.load_data_sources().await?;
+
+        let es_sources: Vec<&DataSource> = data_sources.iter()
+            .filter(|s| s.r#type == "elasticsearch")
+            .collect();
+
         let mut results = Vec::new();
 
         for rule in &rules {
-            match self.fetch_logs_from_es(rule).await {
+            let fetch_result = if let Some(primary) = es_sources.iter().find(|s| s.is_primary) {
+                match Self::create_es_client_from_config(&primary.config) {
+                    Ok(client) => self.fetch_logs_from_es_with_client(rule, client.as_ref()).await,
+                    Err(e) => {
+                        warn!("Failed to create ES client from data source '{}': {}", primary.name, e);
+                        self.fetch_logs_from_es(rule).await
+                    }
+                }
+            } else if let Some(first) = es_sources.first() {
+                match Self::create_es_client_from_config(&first.config) {
+                    Ok(client) => self.fetch_logs_from_es_with_client(rule, client.as_ref()).await,
+                    Err(e) => {
+                        warn!("Failed to create ES client from data source '{}': {}", first.name, e);
+                        self.fetch_logs_from_es(rule).await
+                    }
+                }
+            } else {
+                self.fetch_logs_from_es(rule).await
+            };
+
+            match fetch_result {
                 Ok(logs) => {
                     match self.execute_rule(rule, logs).await {
                         Ok(result) => {

@@ -29,6 +29,40 @@ pub struct LoginRequest {
     pub redirect_uri: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct OidcConfig {
+    pub issuer_url: String,
+    pub realm: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_url: String,
+    pub jwt_secret: String,
+}
+
+async fn load_oidc_config_from_db(db: &sqlx::SqlitePool) -> Result<OidcConfig, AppError> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT key, value FROM system_settings WHERE category = 'oidc'"
+    )
+    .fetch_all(db)
+    .await
+    .map_err(|e| AppError::Internal(format!("Failed to load OIDC settings: {}", e)))?;
+
+    let mut map = std::collections::HashMap::new();
+    for (key, value) in rows {
+        let k = key.strip_prefix("oidc.").unwrap_or(&key).to_string();
+        map.insert(k, value);
+    }
+
+    Ok(OidcConfig {
+        issuer_url: map.get("issuer_url").cloned().unwrap_or_default(),
+        realm: map.get("realm").cloned().unwrap_or_else(|| "master".to_string()),
+        client_id: map.get("client_id").cloned().unwrap_or_default(),
+        client_secret: map.get("client_secret").cloned().unwrap_or_default(),
+        redirect_url: map.get("redirect_url").cloned().unwrap_or_default(),
+        jwt_secret: map.get("jwt_secret").cloned().unwrap_or_default(),
+    })
+}
+
 pub async fn get_current_user(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -36,7 +70,20 @@ pub async fn get_current_user(
     let token = extract_token(&headers)
         .ok_or_else(|| AppError::Unauthorized)?;
 
-    let claims = verify_token(&token, &state.config.oidc.jwt_secret)
+    let oidc = load_oidc_config_from_db(&state.db).await
+        .unwrap_or_else(|_| {
+            let c = &state.config.oidc;
+            OidcConfig {
+                issuer_url: c.issuer_url.clone(),
+                realm: c.realm.clone().unwrap_or_else(|| "master".to_string()),
+                client_id: c.client_id.clone(),
+                client_secret: c.client_secret.clone(),
+                redirect_url: c.redirect_url.clone(),
+                jwt_secret: c.jwt_secret.clone(),
+            }
+        });
+
+    let claims = verify_token(&token, &oidc.jwt_secret)
         .map_err(|_| AppError::Unauthorized)?;
 
     let roles = claims.realm_access
@@ -58,11 +105,22 @@ pub async fn get_current_user(
 pub async fn oidc_login(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
-    let oidc = &state.config.oidc;
-    let realm = oidc.realm.as_deref().unwrap_or("master");
+    let oidc = load_oidc_config_from_db(&state.db).await
+        .unwrap_or_else(|_| {
+            let c = &state.config.oidc;
+            OidcConfig {
+                issuer_url: c.issuer_url.clone(),
+                realm: c.realm.clone().unwrap_or_else(|| "master".to_string()),
+                client_id: c.client_id.clone(),
+                client_secret: c.client_secret.clone(),
+                redirect_url: c.redirect_url.clone(),
+                jwt_secret: c.jwt_secret.clone(),
+            }
+        });
+
     let redirect_url = format!(
         "{}/realms/{}/protocol/openid-connect/auth?client_id={}&redirect_uri={}&response_type=code&scope=openid+profile+email",
-        oidc.issuer_url, realm, oidc.client_id, oidc.redirect_url
+        oidc.issuer_url, oidc.realm, oidc.client_id, oidc.redirect_url
     );
 
     Ok(Json(json!({
@@ -75,13 +133,23 @@ pub async fn oidc_callback(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let oidc = &state.config.oidc;
-    let realm = oidc.realm.as_deref().unwrap_or("master");
+    let oidc = load_oidc_config_from_db(&state.db).await
+        .unwrap_or_else(|_| {
+            let c = &state.config.oidc;
+            OidcConfig {
+                issuer_url: c.issuer_url.clone(),
+                realm: c.realm.clone().unwrap_or_else(|| "master".to_string()),
+                client_id: c.client_id.clone(),
+                client_secret: c.client_secret.clone(),
+                redirect_url: c.redirect_url.clone(),
+                jwt_secret: c.jwt_secret.clone(),
+            }
+        });
 
     let client = reqwest::Client::new();
     let token_url = format!(
         "{}/realms/{}/protocol/openid-connect/token",
-        oidc.issuer_url, realm
+        oidc.issuer_url, oidc.realm
     );
 
     let params = [

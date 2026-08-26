@@ -4,7 +4,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.fast
     image: aads-backend:${VERSION:-latest}
     environment:
       - AADS_SERVER__ADDR=0.0.0.0:8080

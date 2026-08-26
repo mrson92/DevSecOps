@@ -1,6 +1,7 @@
 pub mod cel;
 pub mod engine;
 pub mod report;
+pub mod rule_eval;
 pub mod scheduler;
 pub mod types;
 

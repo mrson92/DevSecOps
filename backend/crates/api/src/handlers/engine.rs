@@ -8,7 +8,7 @@ use aads_engine::RuleEngine;
 pub async fn run_rules(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
-    let mut engine = RuleEngine::new(state.db.clone(), state.es.clone());
+    let engine = RuleEngine::new(state.db.clone(), state.es.clone());
     
     let results = engine.run_all_rules().await
         .map_err(|e| AppError::RuleEngine(format!("Failed to run rules: {}", e)))?;
@@ -32,7 +32,7 @@ pub async fn run_single_rule(
     State(state): State<AppState>,
     axum::extract::Path(rule_id): axum::extract::Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let mut engine = RuleEngine::new(state.db.clone(), state.es.clone());
+    let engine = RuleEngine::new(state.db.clone(), state.es.clone());
     
     let rules = engine.load_rules().await
         .map_err(|e| AppError::RuleEngine(format!("Failed to load rules: {}", e)))?;

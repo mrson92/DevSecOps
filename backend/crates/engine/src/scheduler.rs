@@ -44,7 +44,7 @@ impl Scheduler {
         let state = self.state.clone();
         tokio::spawn(async move {
             let _permit = permit;
-            let mut engine = RuleEngine::new(state.db.clone(), state.es.clone());
+            let engine = RuleEngine::new(state.db.clone(), state.es.clone());
 
             match engine.run_all_rules().await {
                 Ok(results) => {

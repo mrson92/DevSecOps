@@ -56,7 +56,7 @@ impl AppConfig {
         Figment::from(
             Figment::new()
                 .merge(Toml::file("config.toml"))
-                .merge(Env::prefixed("AADS_"))
+                .merge(Env::prefixed("AADS_").split("__"))
         ).extract()
     }
 }

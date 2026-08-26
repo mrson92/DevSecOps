@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
         .route("/api/v1/reports", get(aads_api::handlers::reports::list_reports).post(aads_api::handlers::reports::generate_report))
         .route("/api/v1/reports/{id}", get(aads_api::handlers::reports::get_report))
         .route("/api/v1/data-sources", get(aads_api::handlers::settings::list_data_sources).post(aads_api::handlers::settings::create_data_source))
-        .route("/api/v1/data-sources/{id}", axum::routing::delete(aads_api::handlers::settings::delete_data_source))
+        .route("/api/v1/data-sources/{id}", axum::routing::delete(aads_api::handlers::settings::delete_data_source).put(aads_api::handlers::settings::update_data_source))
         .route("/api/v1/data-sources/{id}/test", axum::routing::post(aads_api::handlers::settings::test_data_source))
         .route("/api/v1/notifications/channels", get(aads_api::handlers::settings::list_notification_channels).post(aads_api::handlers::settings::create_notification_channel))
         .route("/api/v1/notifications/channels/{id}", axum::routing::delete(aads_api::handlers::settings::delete_notification_channel))

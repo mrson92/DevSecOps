@@ -26,5 +26,9 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    sqlx::query(include_str!("../../../migrations/004_fix_seed_rules.sql"))
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }

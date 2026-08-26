@@ -7,6 +7,119 @@ use uuid::Uuid;
 use aads_core::state::AppState;
 use aads_core::error::AppError;
 
+// ============================================================
+// DataSource Config Validation
+// ============================================================
+
+fn validate_datasource_config(ds_type: &str, config: &str) -> Result<Value, AppError> {
+    let parsed: Value = serde_json::from_str(config)
+        .map_err(|e| AppError::Validation(format!("Invalid JSON in config: {}", e)))?;
+
+    match ds_type {
+        "elasticsearch" => {
+            if parsed.get("url").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                return Err(AppError::Validation("Elasticsearch requires 'url' field".into()));
+            }
+        }
+        "loki" => {
+            if parsed.get("url").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                return Err(AppError::Validation("Loki requires 'url' field".into()));
+            }
+        }
+        "postgresql" => {
+            let required = ["host", "database", "user"];
+            for field in &required {
+                if parsed.get(*field).and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                    return Err(AppError::Validation(format!(
+                        "PostgreSQL requires '{}' field", field
+                    )));
+                }
+            }
+        }
+        _ => {
+            return Err(AppError::Validation(format!(
+                "Unsupported datasource type: {}", ds_type
+            )));
+        }
+    }
+
+    Ok(parsed)
+}
+
+async fn test_elasticsearch_connection(url: &str) -> Result<String, AppError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+
+    let health_url = format!("{}/_cluster/health", url.trim_end_matches('/'));
+    let resp = client.get(&health_url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Elasticsearch connection failed: {}", e)))?;
+
+    if resp.status().is_success() {
+        let body: Value = resp.json().await
+            .map_err(|e| AppError::Internal(format!("Failed to parse response: {}", e)))?;
+        let status = body["status"].as_str().unwrap_or("unknown");
+        Ok(format!("Connected (cluster: {})", status))
+    } else {
+        Err(AppError::Internal(format!(
+            "Elasticsearch returned status: {}", resp.status()
+        )))
+    }
+}
+
+async fn test_loki_connection(url: &str) -> Result<String, AppError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+
+    let ready_url = format!("{}/ready", url.trim_end_matches('/'));
+    let resp = client.get(&ready_url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Loki connection failed: {}", e)))?;
+
+    if resp.status().is_success() {
+        Ok("Connected (Loki is ready)".into())
+    } else {
+        Err(AppError::Internal(format!(
+            "Loki returned status: {}", resp.status()
+        )))
+    }
+}
+
+async fn test_postgresql_connection(config: &Value) -> Result<String, AppError> {
+    let host = config["host"].as_str().unwrap_or("localhost");
+    let port = config["port"].as_u64().unwrap_or(5432);
+    let database = config["database"].as_str().unwrap_or("postgres");
+    let user = config["user"].as_str().unwrap_or("postgres");
+    let password = config["password"].as_str().unwrap_or("");
+    let ssl_mode = config["ssl_mode"].as_str().unwrap_or("prefer");
+
+    let conn_str = format!(
+        "host={} port={} dbname={} user={} password={} sslmode={}",
+        host, port, database, user, password, ssl_mode
+    );
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(10))
+        .connect(&conn_str)
+        .await
+        .map_err(|e| AppError::Internal(format!("PostgreSQL connection failed: {}", e)))?;
+
+    sqlx::query("SELECT 1")
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("PostgreSQL query failed: {}", e)))?;
+
+    pool.close().await;
+    Ok(format!("Connected (host:{}, db:{})", host, database))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PaginationParams {
     pub page: Option<u32>,
@@ -86,6 +199,8 @@ pub async fn create_data_source(
     State(state): State<AppState>,
     Json(req): Json<CreateDataSourceRequest>,
 ) -> Result<Json<Value>, AppError> {
+    validate_datasource_config(&req.r#type, &req.config)?;
+
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
@@ -124,20 +239,100 @@ pub async fn delete_data_source(
     Ok(Json(json!({ "success": true, "message": "Data source deleted" })))
 }
 
-pub async fn test_data_source(
+#[derive(Debug, Deserialize)]
+pub struct UpdateDataSourceRequest {
+    pub name: Option<String>,
+    pub r#type: Option<String>,
+    pub config: Option<String>,
+    pub target: Option<String>,
+    pub field_mapping: Option<String>,
+    pub enabled: Option<bool>,
+    pub is_primary: Option<bool>,
+}
+
+pub async fn update_data_source(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Json(req): Json<UpdateDataSourceRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let _source = sqlx::query_as::<_, DataSource>("SELECT * FROM data_sources WHERE id = ?")
+    let existing = sqlx::query_as::<_, DataSource>("SELECT * FROM data_sources WHERE id = ?")
         .bind(&id)
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Data source {} not found", id)))?;
 
-    Ok(Json(json!({
-        "success": true,
-        "data": { "status": "connected", "message": "Connection successful" }
-    })))
+    let new_type = req.r#type.as_deref().unwrap_or(&existing.r#type);
+    let new_config = req.config.as_deref().unwrap_or(&existing.config);
+
+    if req.config.is_some() || req.r#type.is_some() {
+        validate_datasource_config(new_type, new_config)?;
+    }
+
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+
+    sqlx::query(
+        "UPDATE data_sources SET name = ?, type = ?, config = ?, target = ?, field_mapping = ?, enabled = ?, is_primary = ?, updated_at = ? WHERE id = ?"
+    )
+    .bind(req.name.as_deref().unwrap_or(&existing.name))
+    .bind(new_type)
+    .bind(new_config)
+    .bind(req.target.as_deref().unwrap_or(&existing.target))
+    .bind(req.field_mapping.as_deref().unwrap_or(&existing.field_mapping))
+    .bind(req.enabled.unwrap_or(existing.enabled))
+    .bind(req.is_primary.unwrap_or(existing.is_primary))
+    .bind(&now)
+    .bind(&id)
+    .execute(&state.db)
+    .await?;
+
+    let source = sqlx::query_as::<_, DataSource>("SELECT * FROM data_sources WHERE id = ?")
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await?;
+
+    Ok(Json(json!({ "success": true, "data": source })))
+}
+
+pub async fn test_data_source(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let source = sqlx::query_as::<_, DataSource>("SELECT * FROM data_sources WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Data source {} not found", id)))?;
+
+    let config: Value = serde_json::from_str(&source.config)
+        .map_err(|e| AppError::Internal(format!("Invalid config JSON: {}", e)))?;
+
+    let result = match source.r#type.as_str() {
+        "elasticsearch" => {
+            let url = config["url"].as_str().unwrap_or("");
+            test_elasticsearch_connection(url).await
+        }
+        "loki" => {
+            let url = config["url"].as_str().unwrap_or("");
+            test_loki_connection(url).await
+        }
+        "postgresql" => {
+            test_postgresql_connection(&config).await
+        }
+        _ => Err(AppError::Validation(format!(
+            "Unsupported datasource type: {}", source.r#type
+        ))),
+    };
+
+    match result {
+        Ok(message) => Ok(Json(json!({
+            "success": true,
+            "data": { "status": "connected", "message": message }
+        }))),
+        Err(e) => Ok(Json(json!({
+            "success": false,
+            "data": { "status": "failed", "message": format!("{}", e) }
+        }))),
+    }
 }
 
 pub async fn list_notification_channels(
@@ -284,7 +479,7 @@ pub async fn update_oidc_settings(
     for (key, value) in updates {
         if let Some(val) = value {
             sqlx::query(
-                "INSERT INTO system_settings (key, value, category, updated_at) VALUES (?, 'oidc', ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
+                "INSERT INTO system_settings (key, value, category, updated_at) VALUES (?, ?, 'oidc', ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
             )
             .bind(key)
             .bind(&val)

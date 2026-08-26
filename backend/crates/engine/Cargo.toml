@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 aads-core = { path = "../core" }
+aads-es = { path = "../es" }
 
 serde.workspace = true
 serde_json.workspace = true
@@ -18,3 +19,4 @@ chrono.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 reqwest = { version = "0.12", features = ["json"] }
+regex = "1"
