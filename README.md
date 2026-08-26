@@ -23,10 +23,11 @@
 |------|------|
 | **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, Shadcn/ui |
 | **Backend** | Rust, Axum, Tokio, SQLx, Elasticsearch-rs |
+| **Rule Engine** | 네이티브 Rust 평가기 (regex 기반, CEL 대체) |
 | **Database** | SQLite (MVP) → PostgreSQL (확장) |
 | **Log Store** | ElasticSearch 8.x |
 | **Auth** | Keycloak (OIDC) |
-| **배포** | Docker Compose |
+| **배포** | Podman / Docker Compose |
 
 ## 빠른 시작
 
@@ -46,17 +47,23 @@ cd frontend && npm run dev
 npm run dev
 ```
 
-### Docker Compose
+### Docker / Podman Compose
 
 ```bash
 # 빌드 및 실행
 docker compose up -d
+# 또는 Podman 사용 시
+podman compose up -d
 
 # 로그 확인
 docker compose logs -f
+# 또는 Podman 사용 시
+podman compose logs -f
 
-# 중지
-docker compose down
+# 중지 (볼륨 포함 삭제)
+docker compose down -v
+# 또는 Podman 사용 시
+podman compose down -v
 ```
 
 ## 프로젝트 구조
@@ -65,19 +72,21 @@ docker compose down
 DevSecOPS/
 ├── SPEC.md                    # 시스템 스펙 문서
 ├── LOG_FIELD_MAPPING.md       # 로그 필드 매핑표
-├── docker-compose.yml         # Docker Compose 설정
+├── docker-compose.yml         # Docker/Podman Compose 설정
 ├── package.json               # 루트 패키지 (dev 스크립트)
 │
 ├── backend/                   # Rust 백엔드
 │   ├── Cargo.toml             # 워크스페이스 설정
 │   ├── config.toml            # 앱 설정
-│   ├── Dockerfile             # 백엔드 Dockerfile
+│   ├── Dockerfile             # 백엔드 Dockerfile (풀 빌드)
+│   ├── Dockerfile.fast        # 빠른 배포용 Dockerfile (사전 빌드 바이너리)
 │   ├── migrations/            # DB 마이그레이션
 │   └── crates/
 │       ├── core/              # 비즈니스 로직 (모델, 설정, 에러)
 │       ├── api/               # HTTP 핸들러
 │       ├── es/                # ElasticSearch 클라이언트
-│       └── db/                # 데이터베이스 레이어
+│       ├── db/                # 데이터베이스 레이어
+│       └── engine/            # 룰 엔진 (네이티브 Rust 평가기)
 │
 └── frontend/                  # React 프론트엔드
     ├── package.json           # 의존성
@@ -96,10 +105,26 @@ DevSecOPS/
 |--------|------|------|
 | GET | `/health` | 헬스체크 |
 | GET | `/api/v1/rules` | 룰 목록 |
+| POST | `/api/v1/rules` | 룰 생성 |
 | GET | `/api/v1/rules/:id` | 룰 상세 |
+| PUT | `/api/v1/rules/:id` | 룰 수정 |
+| DELETE | `/api/v1/rules/:id` | 룰 삭제 |
+| POST | `/api/v1/rules/:id/test` | 룰 테스트 |
 | GET | `/api/v1/detections` | 탐지 목록 |
 | GET | `/api/v1/detections/:id` | 탐지 상세 |
+| PATCH | `/api/v1/detections/:id` | 탐지 상태 업데이트 |
 | GET | `/api/v1/dashboard/stats` | 대시보드 통계 |
+| GET | `/api/v1/dashboard/timeline` | 타임라인 차트 |
+| GET | `/api/v1/dashboard/top-rules` | 상위 룰 |
+| GET | `/api/v1/dashboard/top-ips` | 상위 IP |
+| POST | `/api/v1/engine/run` | 전체 룰 실행 |
+| POST | `/api/v1/engine/run/:id` | 단일 룰 실행 |
+| GET | `/api/v1/reports` | 리포트 목록 |
+| POST | `/api/v1/reports` | 리포트 생성 |
+| GET | `/api/v1/data-sources` | 데이터 소스 목록 |
+| GET | `/api/v1/notifications/channels` | 알림 채널 목록 |
+| GET | `/api/v1/settings/oidc` | OIDC 설정 |
+| GET | `/api/v1/auth/me` | 현재 사용자 |
 
 ## 스크립트
 
@@ -134,35 +159,59 @@ DevSecOPS/
 | Phase 1 | 프로젝트 구조 설계 및 구현 | ✅ 완료 |
 | 1.1 | 스펙 문서 작성 (SPEC.md) | ✅ 완료 |
 | 1.2 | 로그 필드 매핑 (LOG_FIELD_MAPPING.md) | ✅ 완료 |
-| 1.3 | 초기 룰셋 정의 (RULES.md) | ✅ 완료 |
+| 1.3 | 초기 룰셋 정의 (10개 시드 룰) | ✅ 완료 |
 | 1.4 | Rust 백엔드 워크스페이스 구성 | ✅ 완료 |
 | 1.5 | SQLite DB 마이그레이션 | ✅ 완료 |
 | 1.6 | React 프론트엔드 스캐폴딩 | ✅ 완료 |
-| 1.7 | API 핸들러 구현 | ✅ 완료 |
+| 1.7 | API 핸들러 구현 (전체 CRUD) | ✅ 완료 |
 | 1.8 | 프론트엔드-백엔드 연동 | ✅ 완료 |
+| Phase 2 | 룰 엔진 및 ELK 연동 | ✅ 완료 |
+| 2.1 | ElasticSearch 로그 수집 | ✅ 완료 |
+| 2.2 | 네이티브 Rust 룰 엔진 구현 | ✅ 완료 |
+| 2.3 | 탐지 로직 구현 | ✅ 완료 |
+| 2.4 | Podman/Docker Compose 배포 | ✅ 완료 |
+| Phase 3 | UI 고도화 | ✅ 완료 |
+| 3.1 | 대시보드 차트 (Recharts) | ✅ 완료 |
+| 3.2 | 룰 관리 CRUD UI | ✅ 완료 |
+| 3.3 | 탐지 상세/상태 관리 UI | ✅ 완료 |
+| 3.4 | 리포트 UI | ✅ 완료 |
+| 3.5 | 설정 페이지 (OIDC, 데이터소스, 알림) | ✅ 완료 |
+
+### 룰 엔진 지원 패턴
+
+네이티브 Rust 평가기가 지원하는 조건 패턴:
+
+| 패턴 | 예시 |
+|------|------|
+| 정규식 매칭 | `path.matches("(?i)/admin.*")` |
+| 비교 연산 | `status_code >= 400`, `response_size >= 10485761` |
+| 논리 연산 | `cond1 && cond2`, `cond1 \|\| cond2`, `!cond` |
+| 필드 존재 | `has("user_id")` |
+| 반복자 래퍼 | `exists(logs, log -> ...)`, `count(filter(logs, log -> ...)) >= N` |
 
 ### 테스트 결과
 
 | 테스트 | 결과 |
 |--------|------|
-| `cargo check` (백엔드 컴파일) | ✅ 통과 |
 | `cargo build --release` (백엔드 빌드) | ✅ 통과 |
 | `npm run build` (프론트엔드 빌드) | ✅ 통과 |
-| `GET /health` | ✅ 200 OK |
+| 전체 Docker/Podman 스택 배포 | ✅ 통과 |
+| ES 클러스터 상태 (green) | ✅ 통과 |
+| Backend 헬스체크 (`/health`) | ✅ 200 OK |
+| Frontend 서빙 (Nginx) | ✅ 200 OK |
+| API 프록시 (`/api/v1/*`) | ✅ 연동 확인 |
+| 10개 룰 컴파일 및 스케줄러 실행 | ✅ 정상 동작 |
 | `GET /api/v1/rules` | ✅ 10개 룰 조회 |
 | `GET /api/v1/dashboard/stats` | ✅ 통계 조회 |
-| `GET /api/v1/detections` | ✅ 빈 목록 조회 |
-| Vite API 프록시 | ✅ 연동 확인 |
 
-### 다음 단계 (Phase 2)
+### 다음 단계
 
 | 단계 | 내용 | 상태 |
 |------|------|------|
-| 2.1 | ElasticSearch 로그 수집 | 🔲 예정 |
-| 2.2 | 룰 엔진 구현 (CEL) | 🔲 예정 |
-| 2.3 | 탐지 로직 구현 | 🔲 예정 |
-| 2.4 | Docker Compose 배포 | 🔲 예정 |
-| 2.5 | Keycloak OIDC 연동 | 🔲 예정 |
+| 4.1 | 실제 로그 데이터 수집 파이프라인 | 🔲 예정 |
+| 4.2 | Keycloak OIDC 연동 | 🔲 예정 |
+| 4.3 | 알림 채널 (Slack/이메일) 연동 | 🔲 예정 |
+| 4.4 | 성능 테스트 및 최적화 | 🔲 예정 |
 
 ### 브라우저에서 확인
 
