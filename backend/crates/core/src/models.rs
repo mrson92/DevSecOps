@@ -164,3 +164,95 @@ pub struct DataSource {
     pub created_at: String,
     pub updated_at: String,
 }
+
+// --- AI Agent & Persona ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Persona {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub system_prompt: String,
+    pub model: String,
+    pub temperature: f64,
+    pub max_tokens: i32,
+    pub tools: String,
+    pub metadata: Option<String>,
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct AiAgent {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub persona_id: String,
+    pub agent_type: String,
+    pub enabled: bool,
+    pub config: String,
+    pub schedule: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct AiAgentRun {
+    pub id: String,
+    pub agent_id: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub status: String,
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub error_message: Option<String>,
+    pub token_usage: Option<i32>,
+    pub duration_ms: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePersonaRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub system_prompt: String,
+    pub model: Option<String>,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<i32>,
+    pub tools: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdatePersonaRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub system_prompt: Option<String>,
+    pub model: Option<String>,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<i32>,
+    pub tools: Option<String>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAgentRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub persona_id: String,
+    pub agent_type: Option<String>,
+    pub config: Option<String>,
+    pub schedule: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateAgentRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub persona_id: Option<String>,
+    pub agent_type: Option<String>,
+    pub enabled: Option<bool>,
+    pub config: Option<String>,
+    pub schedule: Option<String>,
+}

@@ -30,5 +30,9 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    sqlx::query(include_str!("../../../migrations/005_ai_agents.sql"))
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }

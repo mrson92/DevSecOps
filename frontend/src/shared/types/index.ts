@@ -126,3 +126,86 @@ export interface OidcTestResult {
     authorization_endpoint: string
   }
 }
+
+export interface Persona {
+  id: string
+  name: string
+  description: string | null
+  system_prompt: string
+  model: string
+  temperature: number
+  max_tokens: number
+  tools: string
+  metadata: string | null
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AiAgent {
+  id: string
+  name: string
+  description: string | null
+  persona_id: string
+  agent_type: 'analyzer' | 'responder' | 'investigator' | 'reporter'
+  enabled: boolean
+  config: string
+  schedule: string | null
+  created_at: string
+  updated_at: string
+  created_by: string | null
+  updated_by: string | null
+}
+
+export interface AiAgentRun {
+  id: string
+  agent_id: string
+  started_at: string
+  completed_at: string | null
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  input: string | null
+  output: string | null
+  error_message: string | null
+  token_usage: number | null
+  duration_ms: number | null
+}
+
+export interface CreatePersonaRequest {
+  name: string
+  description?: string
+  system_prompt: string
+  model?: string
+  temperature?: number
+  max_tokens?: number
+  tools?: string
+}
+
+export interface UpdatePersonaRequest {
+  name?: string
+  description?: string
+  system_prompt?: string
+  model?: string
+  temperature?: number
+  max_tokens?: number
+  tools?: string
+  enabled?: boolean
+}
+
+export interface CreateAgentRequest {
+  name: string
+  description?: string
+  persona_id: string
+  agent_type?: string
+  config?: string
+  schedule?: string
+}
+
+export interface UpdateAgentRequest {
+  name?: string
+  description?: string
+  persona_id?: string
+  agent_type?: string
+  enabled?: boolean
+  config?: string
+  schedule?: string
+}
