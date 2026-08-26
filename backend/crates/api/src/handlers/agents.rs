@@ -5,7 +5,8 @@ use uuid::Uuid;
 
 use aads_core::state::AppState;
 use aads_core::error::AppError;
-use aads_core::models::{CreateAgentRequest, UpdateAgentRequest, AiAgent};
+use aads_core::models::{CreateAgentRequest, UpdateAgentRequest, AiAgent, AiAgentRun};
+use aads_engine::agent_runner::AgentRunner;
 
 pub async fn list_agents(
     State(state): State<AppState>,
@@ -135,5 +136,41 @@ pub async fn delete_agent(
     Ok(Json(json!({
         "success": true,
         "message": format!("Agent {} deleted", id)
+    })))
+}
+
+pub async fn run_agent_now(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let agent = sqlx::query_as::<_, AiAgent>("SELECT * FROM ai_agents WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
+
+    let runner = AgentRunner::new(state.db.clone());
+    let run = runner.run_agent(&agent).await?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": run
+    })))
+}
+
+pub async fn list_agent_runs(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let runs = sqlx::query_as::<_, AiAgentRun>(
+        "SELECT * FROM ai_agent_runs WHERE agent_id = ? ORDER BY started_at DESC LIMIT 50"
+    )
+    .bind(&id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": runs
     })))
 }

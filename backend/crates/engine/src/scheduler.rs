@@ -3,6 +3,7 @@ use tokio::sync::Semaphore;
 use tokio::time::{interval, Duration};
 use tracing::{info, error, warn};
 
+use crate::agent_runner::AgentRunner;
 use crate::engine::RuleEngine;
 use crate::types::DetectionResult;
 use aads_core::state::AppState;
@@ -57,6 +58,18 @@ impl Scheduler {
                 }
                 Err(e) => {
                     error!("Scheduler cycle failed: {}", e);
+                }
+            }
+
+            let agent_runner = AgentRunner::new(state.db.clone());
+            match agent_runner.run_scheduled_agents().await {
+                Ok(runs) => {
+                    if !runs.is_empty() {
+                        info!("Scheduler: {} agents executed", runs.len());
+                    }
+                }
+                Err(e) => {
+                    error!("Scheduler agent execution failed: {}", e);
                 }
             }
         });
