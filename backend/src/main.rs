@@ -74,6 +74,7 @@ async fn main() -> Result<()> {
         .route("/api/v1/agents/{id}", get(aads_api::handlers::agents::get_agent).put(aads_api::handlers::agents::update_agent).delete(aads_api::handlers::agents::delete_agent))
         .route("/api/v1/agents/{id}/run", axum::routing::post(aads_api::handlers::agents::run_agent_now))
         .route("/api/v1/agents/{id}/runs", get(aads_api::handlers::agents::list_agent_runs))
+        .route("/api/v1/chat", axum::routing::post(aads_api::handlers::chat::chat))
         .route("/api/v1/personas", get(aads_api::handlers::personas::list_personas).post(aads_api::handlers::personas::create_persona))
         .route("/api/v1/personas/{id}", get(aads_api::handlers::personas::get_persona).put(aads_api::handlers::personas::update_persona).delete(aads_api::handlers::personas::delete_persona))
         .route("/api/v1/auth/me", get(aads_api::handlers::auth::get_current_user))
