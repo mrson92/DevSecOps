@@ -141,7 +141,7 @@ impl RuleEngine {
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            es_client.search("aads-logs", query)
+            es_client.search("logs", query)
         )
         .await
         .map_err(|_| AppError::ElasticSearch("ES search timeout".to_string()))?
