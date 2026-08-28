@@ -8,7 +8,6 @@ use aads_core::error::AppError;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct Report {
     pub id: String,
-    #[sqlx(rename = "type")]
     pub report_type: String,
     pub title: String,
     pub period_start: String,
