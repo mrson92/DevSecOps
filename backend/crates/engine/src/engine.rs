@@ -68,6 +68,12 @@ impl RuleEngine {
         let matched_count = evaluator.count_matched(&logs);
         let detected = matched_count as u32 >= threshold;
 
+        let group_key = if detected {
+            Self::derive_group_key(&rule.group_by, &logs)
+        } else {
+            None
+        };
+
         let matched_entries = if detected {
             logs.into_iter()
                 .filter(|log| evaluator.evaluate(&[log.clone()]))
@@ -82,10 +88,38 @@ impl RuleEngine {
             severity: rule.severity.clone(),
             detected,
             matched_count: matched_count as u32,
-            group_key: None,
+            group_key,
             matched_entries,
             timestamp: Utc::now().to_rfc3339(),
         })
+    }
+
+    fn derive_group_key(group_by: &str, entries: &[LogEntry]) -> Option<String> {
+        let fields: Vec<String> = serde_json::from_str(group_by).unwrap_or_default();
+        let first = entries.first()?;
+        if fields.is_empty() {
+            return None;
+        }
+
+        let mut values = Vec::new();
+        for field in fields {
+            let value = match field.as_str() {
+                "network.client.ip" => first.client_ip.clone(),
+                "http.request.path" => first.path.clone(),
+                "http.request.method" => first.method.clone(),
+                "http.request.query" => first.query.clone().unwrap_or_default(),
+                "http.response.status_code" => first.status_code.to_string(),
+                "http.response.size" => first.response_size.to_string(),
+                "http.user_agent.original" => first.user_agent.clone().unwrap_or_default(),
+                "app.user.id" => first.user_id.clone().unwrap_or_default(),
+                _ => String::new(),
+            };
+            if !value.is_empty() {
+                values.push(value);
+            }
+        }
+
+        if values.is_empty() { None } else { Some(values.join("|")) }
     }
 
     pub async fn save_detection(&self, result: &DetectionResult) -> Result<String, AppError> {
@@ -109,7 +143,7 @@ impl RuleEngine {
         .bind(&result.group_key)
         .bind(serde_json::to_string(&result.matched_entries).unwrap_or_default())
         .bind(&now)
-        .fetch_one(&self.db)
+        .execute(&self.db)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to save detection: {}", e)))?;
 
