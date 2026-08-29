@@ -107,8 +107,8 @@ pub async fn create_rule(
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
     sqlx::query(
-        r#"INSERT INTO rules (id, name, description, severity, enabled, rule_type, condition, window_sec, slide_sec, group_by, actions, mitre_tactics, mitre_techniques, "references", version, created_at, updated_at)
-        VALUES (?, ?, ?, ?, true, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"#
+        r#"INSERT INTO rules (id, name, description, severity, enabled, rule_type, condition, window_sec, slide_sec, group_by, actions, mitre_tactics, mitre_techniques, "references", tags, version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, true, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"#
     )
     .bind(&id)
     .bind(&req.name)
@@ -123,6 +123,7 @@ pub async fn create_rule(
     .bind(req.mitre_tactics.as_deref().unwrap_or("[]"))
     .bind(req.mitre_techniques.as_deref().unwrap_or("[]"))
     .bind(req.references.as_deref().unwrap_or("[]"))
+    .bind(req.tags.as_deref().unwrap_or("[]"))
     .bind(&now)
     .bind(&now)
     .execute(&state.db)
@@ -171,6 +172,7 @@ pub async fn update_rule(
             mitre_tactics = COALESCE(?, mitre_tactics),
             mitre_techniques = COALESCE(?, mitre_techniques),
             "references" = COALESCE(?, "references"),
+            tags = COALESCE(?, tags),
             version = ?,
             updated_at = ?
         WHERE id = ?"#
@@ -187,6 +189,7 @@ pub async fn update_rule(
     .bind(req.mitre_tactics)
     .bind(req.mitre_techniques)
     .bind(req.references)
+    .bind(req.tags)
     .bind(new_version)
     .bind(&now)
     .bind(id.to_string())

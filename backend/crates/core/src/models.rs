@@ -16,6 +16,7 @@ pub struct Rule {
     pub mitre_tactics: Option<String>,
     pub mitre_techniques: Option<String>,
     pub references: Option<String>,
+    pub tags: Option<String>,
     pub version: i32,
     pub parent_rule_id: Option<String>,
     pub created_at: String,
@@ -84,6 +85,7 @@ pub struct CreateRuleRequest {
     pub mitre_tactics: Option<String>,
     pub mitre_techniques: Option<String>,
     pub references: Option<String>,
+    pub tags: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +102,7 @@ pub struct UpdateRuleRequest {
     pub mitre_tactics: Option<String>,
     pub mitre_techniques: Option<String>,
     pub references: Option<String>,
+    pub tags: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

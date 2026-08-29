@@ -33,6 +33,8 @@ export interface Rule {
   actions: Record<string, unknown>[]
   mitre_tactics: string[]
   mitre_techniques: string[]
+  references: string[]
+  tags: string[]
   version: number
   parent_rule_id: string | null
   created_at: string

@@ -5,6 +5,7 @@ import api from '@/shared/lib/api'
 import type { Detection, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { useRuleName } from '../hooks/useRuleName'
 
 interface DetectionFilters {
   severity?: string
@@ -16,6 +17,7 @@ interface DetectionFilters {
 export function DetectionsPage() {
   const [filters, setFilters] = useState<DetectionFilters>({ page: 1, size: 20 })
   const [showFilters, setShowFilters] = useState(false)
+  const { byId } = useRuleName()
 
   const { data: detectionsData, isLoading } = useQuery<ApiResponse<Detection[]>>({
     queryKey: ['detections', filters],
@@ -109,7 +111,11 @@ export function DetectionsPage() {
                 <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-lg">Detection #{detection.id.slice(0, 8)}</CardTitle>
-                    <span className={`px-2 py-1 text-xs rounded-full ${
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-700">
+                        {byId(detection.rule_id)?.name ?? detection.rule_id.slice(0, 8)}
+                      </span>
+                      <span className={`px-2 py-1 text-xs rounded-full ${
                       detection.status === 'open' ? 'bg-red-100 text-red-800' :
                       detection.status === 'acknowledged' ? 'bg-yellow-100 text-yellow-800' :
                       detection.status === 'investigating' ? 'bg-blue-100 text-blue-800' :
@@ -117,11 +123,12 @@ export function DetectionsPage() {
                     }`}>
                       {detection.status}
                     </span>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="flex gap-4 text-sm text-muted-foreground">
                       <span>Matched: {detection.matched_count}</span>
-                      <span>Rule: {detection.rule_id.slice(0, 8)}</span>
+                      <span>Rule ver: v{detection.rule_version}</span>
                       <span>Detected: {new Date(detection.detected_at).toLocaleString()}</span>
                     </div>
                   </CardContent>

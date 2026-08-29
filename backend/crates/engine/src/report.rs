@@ -168,7 +168,7 @@ impl ReportGenerator {
         let report_id = Uuid::new_v4().to_string();
         let now = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
-        sqlx::query(
+        let insert = sqlx::query(
             r#"INSERT INTO reports (id, type, title, period_start, period_end, content, summary, format, status, generated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 'json', 'completed', ?)"#
         )
@@ -181,8 +181,17 @@ impl ReportGenerator {
         .bind(&summary_text)
         .bind(&now)
         .execute(&self.db)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to save report: {}", e)))?;
+        .await;
+
+        // Race safety: if a concurrent request already inserted a report for this
+        // same period, the unique index rejects this insert. Return the existing
+        // report instead of failing or creating a duplicate.
+        if let Err(e) = insert {
+            if let Some(existing) = self.find_by_period(report_type, start).await? {
+                return Ok(existing);
+            }
+            return Err(AppError::Internal(format!("Failed to save report: {}", e)));
+        }
 
         info!("Generated {} report: {}", report_type, report_id);
 
@@ -527,25 +536,60 @@ impl ReportGenerator {
         text
     }
 
-    pub async fn list_reports(&self, page: u32, size: u32) -> Result<(Vec<Report>, i64), AppError> {
+    pub async fn list_reports(&self, page: u32, size: u32, report_type: Option<&str>) -> Result<(Vec<Report>, i64), AppError> {
         let offset = ((page - 1) * size) as i64;
         let limit = size as i64;
 
-        let reports: Vec<Report> = sqlx::query_as::<_, Report>(
-            "SELECT id, type as report_type, title, period_start, period_end, content, summary, format, status, generated_at FROM reports ORDER BY generated_at DESC LIMIT ? OFFSET ?"
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&self.db)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to list reports: {}", e)))?;
+        let (reports, total): (Vec<Report>, i64) = match report_type {
+            Some(t) => {
+                let reports: Vec<Report> = sqlx::query_as::<_, Report>(
+                    "SELECT id, type as report_type, title, period_start, period_end, content, summary, format, status, generated_at FROM reports WHERE type = ? ORDER BY generated_at DESC LIMIT ? OFFSET ?"
+                )
+                .bind(t)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.db)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to list reports: {}", e)))?;
 
-        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM reports")
-            .fetch_one(&self.db)
+                let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM reports WHERE type = ?")
+                    .bind(t)
+                    .fetch_one(&self.db)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Failed to count reports: {}", e)))?;
+
+                (reports, total.0)
+            }
+            None => {
+                let reports: Vec<Report> = sqlx::query_as::<_, Report>(
+                    "SELECT id, type as report_type, title, period_start, period_end, content, summary, format, status, generated_at FROM reports ORDER BY generated_at DESC LIMIT ? OFFSET ?"
+                )
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.db)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to list reports: {}", e)))?;
+
+                let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM reports")
+                    .fetch_one(&self.db)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Failed to count reports: {}", e)))?;
+
+                (reports, total.0)
+            }
+        };
+
+        Ok((reports, total))
+    }
+
+    pub async fn delete_report(&self, id: &str) -> Result<bool, AppError> {
+        let result = sqlx::query("DELETE FROM reports WHERE id = ?")
+            .bind(id)
+            .execute(&self.db)
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to count reports: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to delete report: {}", e)))?;
 
-        Ok((reports, total.0))
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn get_report(&self, id: &str) -> Result<Option<Report>, AppError> {
@@ -556,6 +600,19 @@ impl ReportGenerator {
         .fetch_optional(&self.db)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get report: {}", e)))?;
+
+        Ok(report)
+    }
+
+    pub async fn find_by_period(&self, report_type: &str, period_start: &str) -> Result<Option<Report>, AppError> {
+        let report = sqlx::query_as::<_, Report>(
+            "SELECT id, type as report_type, title, period_start, period_end, content, summary, format, status, generated_at FROM reports WHERE type = ? AND period_start = ?"
+        )
+        .bind(report_type)
+        .bind(period_start)
+        .fetch_optional(&self.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to find report by period: {}", e)))?;
 
         Ok(report)
     }

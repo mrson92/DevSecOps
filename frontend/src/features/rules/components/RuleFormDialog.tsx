@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/shared/lib/api'
-import type { Rule } from '@/shared/types'
+import type { Rule, ApiResponse } from '@/shared/types'
 import { Button } from '@/components/ui/button'
 
 interface RuleFormDialogProps {
@@ -18,6 +18,7 @@ interface RuleFormData {
   condition: string
   window_sec: number
   slide_sec: number
+  tags: string
 }
 
 const defaultForm: RuleFormData = {
@@ -28,11 +29,36 @@ const defaultForm: RuleFormData = {
   condition: '',
   window_sec: 300,
   slide_sec: 60,
+  tags: '',
+}
+
+interface MitreTechnique {
+  id: string
+  name: string
+  tactic: string
+}
+
+function parseStringArray(value: string[] | string | null | undefined): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.map(String) : []
+  } catch {
+    return []
+  }
 }
 
 export function RuleFormDialog({ open, onClose, rule }: RuleFormDialogProps) {
   const [form, setForm] = useState<RuleFormData>(defaultForm)
+  const [showMitre, setShowMitre] = useState(false)
   const queryClient = useQueryClient()
+
+  const { data: mitreData } = useQuery<ApiResponse<MitreTechnique[]>>({
+    queryKey: ['mitre-techniques'],
+    queryFn: () => api.get('/mitre/techniques').then((res) => res.data),
+    enabled: showMitre,
+  })
 
   useEffect(() => {
     if (rule) {
@@ -44,14 +70,26 @@ export function RuleFormDialog({ open, onClose, rule }: RuleFormDialogProps) {
         condition: rule.condition,
         window_sec: rule.window_sec,
         slide_sec: rule.slide_sec,
+        tags: parseStringArray(rule.tags).join(', '),
       })
     } else {
       setForm(defaultForm)
     }
   }, [rule, open])
 
+  const buildPayload = (data: RuleFormData) => {
+    const tags = data.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0)
+    return {
+      ...data,
+      tags: JSON.stringify(tags),
+    }
+  }
+
   const createMutation = useMutation({
-    mutationFn: (data: RuleFormData) => api.post('/rules', data),
+    mutationFn: (data: RuleFormData) => api.post('/rules', buildPayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       onClose()
@@ -59,7 +97,7 @@ export function RuleFormDialog({ open, onClose, rule }: RuleFormDialogProps) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: RuleFormData) => api.put(`/rules/${rule?.id}`, data),
+    mutationFn: (data: RuleFormData) => api.put(`/rules/${rule?.id}`, buildPayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule', rule?.id] })
@@ -154,6 +192,51 @@ export function RuleFormDialog({ open, onClose, rule }: RuleFormDialogProps) {
               min={1}
             />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Tags (Sigma-style, comma separated)</label>
+          <input
+            type="text"
+            value={form.tags}
+            onChange={(e) => setForm({ ...form, tags: e.target.value })}
+            className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono"
+            placeholder='e.g. attack.t1110, status.experimental, cve.2021-44228'
+          />
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" size="sm" type="button" onClick={() => setShowMitre((v) => !v)}>
+              {showMitre ? 'Hide MITRE ATT&CK reference' : 'Show MITRE ATT&CK reference'}
+            </Button>
+          </div>
+          {showMitre && (
+            <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-1">
+              {mitreData?.data?.length ? (
+                mitreData.data.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-muted"
+                    onClick={() => {
+                      const tag = `attack.t${t.id.replace('T', '')}`
+                      const existing = form.tags
+                        .split(',')
+                        .map((x) => x.trim())
+                        .filter((x) => x.length > 0)
+                      if (!existing.includes(tag)) {
+                        existing.push(tag)
+                        setForm({ ...form, tags: existing.join(', ') })
+                      }
+                    }}
+                  >
+                    <span className="font-mono font-medium">attack.t{t.id.replace('T', '')}</span>
+                    <span className="text-muted-foreground"> — {t.name}</span>
+                  </button>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground">Loading MITRE reference...</p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">

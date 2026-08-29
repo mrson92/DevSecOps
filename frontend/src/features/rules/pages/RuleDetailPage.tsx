@@ -8,6 +8,17 @@ import { Button } from '@/components/ui/button'
 import { RuleFormDialog } from '../components/RuleFormDialog'
 import { RuleTestPanel } from '../components/RuleTestPanel'
 
+function parseStringArray(value: string[] | string | null | undefined): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.map(String) : []
+  } catch {
+    return []
+  }
+}
+
 export function RuleDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -49,6 +60,10 @@ export function RuleDetailPage() {
   if (!rule) {
     return <div className="text-center py-8">Rule not found</div>
   }
+
+  const tactics = parseStringArray(rule.mitre_tactics)
+  const techniques = parseStringArray(rule.mitre_techniques)
+  const tags = parseStringArray(rule.tags)
 
   return (
     <div className="space-y-6">
@@ -116,6 +131,48 @@ export function RuleDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {(tags.length || techniques.length || tactics.length) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Tags & MITRE</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {tactics.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Tactics</span>
+                <div className="flex flex-wrap gap-2">
+                  {tactics.map((t) => (
+                    <span key={t} className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-700 font-mono">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {techniques.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Techniques</span>
+                <div className="flex flex-wrap gap-2">
+                  {techniques.map((t) => (
+                    <span key={t} className="px-2 py-1 text-xs rounded-full bg-indigo-50 text-indigo-700 font-mono">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {tags.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Tags</span>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((tag) => (
+                    <span key={tag} className="px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-700 font-mono">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

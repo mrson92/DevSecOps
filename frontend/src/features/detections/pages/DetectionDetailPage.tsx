@@ -5,6 +5,7 @@ import api from '@/shared/lib/api'
 import type { Detection, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { useRuleName } from '../hooks/useRuleName'
 
 type EvidenceItem = Record<string, unknown>
 
@@ -192,6 +193,7 @@ export function DetectionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { byId } = useRuleName()
 
   const { data: detectionData, isLoading } = useQuery<ApiResponse<Detection>>({
     queryKey: ['detection', id],
@@ -223,7 +225,18 @@ export function DetectionDetailPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Detection #{detection.id.slice(0, 8)}</h1>
-          <p className="text-muted-foreground">Detected at {new Date(detection.detected_at).toLocaleString()}</p>
+          <p className="text-muted-foreground">
+            Detected at {new Date(detection.detected_at).toLocaleString()}
+          </p>
+          <p className="text-sm">
+            Rule:{' '}
+            <button
+              className="font-medium text-primary underline underline-offset-4"
+              onClick={() => navigate(`/rules/${detection.rule_id}`)}
+            >
+              {byId(detection.rule_id)?.name ?? detection.rule_id.slice(0, 8)}
+            </button>
+          </p>
         </div>
         <div className="flex gap-2">
           {detection.status === 'open' && (
@@ -278,10 +291,16 @@ export function DetectionDetailPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Rule Version</CardTitle>
+            <CardTitle className="text-sm font-medium">Rule</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-lg font-semibold">v{detection.rule_version}</div>
+          <CardContent className="space-y-1">
+            <button
+              className="text-sm font-semibold text-primary underline underline-offset-4"
+              onClick={() => navigate(`/rules/${detection.rule_id}`)}
+            >
+              {byId(detection.rule_id)?.name ?? detection.rule_id.slice(0, 8)}
+            </button>
+            <div className="text-xs text-muted-foreground">v{detection.rule_version}</div>
           </CardContent>
         </Card>
         <Card>

@@ -34,5 +34,22 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    sqlx::query(include_str!("../../../migrations/006_unique_report_period.sql"))
+        .execute(&pool)
+        .await?;
+
+    // Idempotent column add: SQLite has no "ADD COLUMN IF NOT EXISTS", and
+    // migrations run on every startup, so only add `tags` when missing.
+    let has_tags: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM pragma_table_info('rules') WHERE name = 'tags'"
+    )
+    .fetch_one(&pool)
+    .await?;
+    if has_tags.0 == 0 {
+        sqlx::query(include_str!("../../../migrations/007_rule_tags.sql"))
+            .execute(&pool)
+            .await?;
+    }
+
     Ok(pool)
 }
