@@ -88,14 +88,14 @@ DevSecOPS/
 │       ├── db/                # 데이터베이스 레이어
 │       └── engine/            # 룰 엔진 (네이티브 Rust 평가기)
 │
-└── frontend/                  # React 프론트엔드
+└── frontend/                   # React 프론트엔드
     ├── package.json           # 의존성
     ├── vite.config.ts         # Vite 설정
     ├── Dockerfile             # 프론트 Dockerfile
     └── src/
         ├── app/               # 앱 라우팅
         ├── components/ui/     # Shadcn/ui 컴포넌트
-        ├── features/          # 기능별 모듈 (dashboard, rules, detections)
+        ├── features/          # 기능별 모듈 (dashboard, rules, detections, agents, chat, reports, settings)
         └── shared/            # 공통 모듈 (layout, types, api)
 ```
 
@@ -110,6 +110,8 @@ DevSecOPS/
 | PUT | `/api/v1/rules/:id` | 룰 수정 |
 | DELETE | `/api/v1/rules/:id` | 룰 삭제 |
 | POST | `/api/v1/rules/:id/test` | 룰 테스트 |
+| GET | `/api/v1/mitre/tactics` | MITRE ATT&CK 전술 카탈로그 |
+| GET | `/api/v1/mitre/techniques` | MITRE ATT&CK 기법 카탈로그 |
 | GET | `/api/v1/detections` | 탐지 목록 |
 | GET | `/api/v1/detections/:id` | 탐지 상세 |
 | PATCH | `/api/v1/detections/:id` | 탐지 상태 업데이트 |
@@ -120,11 +122,37 @@ DevSecOPS/
 | POST | `/api/v1/engine/run` | 전체 룰 실행 |
 | POST | `/api/v1/engine/run/:id` | 단일 룰 실행 |
 | GET | `/api/v1/reports` | 리포트 목록 |
-| POST | `/api/v1/reports` | 리포트 생성 |
+| POST | `/api/v1/reports` | 리포트 생성 (일/주/월) |
+| GET | `/api/v1/reports/:id` | 리포트 상세 |
+| DELETE | `/api/v1/reports/:id` | 리포트 삭제 |
 | GET | `/api/v1/data-sources` | 데이터 소스 목록 |
+| POST | `/api/v1/data-sources` | 데이터 소스 생성 |
+| PUT | `/api/v1/data-sources/:id` | 데이터 소스 수정 |
+| DELETE | `/api/v1/data-sources/:id` | 데이터 소스 삭제 |
+| POST | `/api/v1/data-sources/:id/test` | 데이터 소스 연결 테스트 |
 | GET | `/api/v1/notifications/channels` | 알림 채널 목록 |
+| POST | `/api/v1/notifications/channels` | 알림 채널 생성 |
+| DELETE | `/api/v1/notifications/channels/:id` | 알림 채널 삭제 |
+| POST | `/api/v1/notifications/channels/:id/test` | 알림 채널 테스트 |
+| GET | `/api/v1/agents` | 에이전트 목록 |
+| POST | `/api/v1/agents` | 에이전트 생성 |
+| GET | `/api/v1/agents/:id` | 에이전트 상세 |
+| PUT | `/api/v1/agents/:id` | 에이전트 수정 |
+| DELETE | `/api/v1/agents/:id` | 에이전트 삭제 |
+| POST | `/api/v1/agents/:id/run` | 에이전트 즉시 실행 |
+| GET | `/api/v1/agents/:id/runs` | 에이전트 실행 이력 |
+| POST | `/api/v1/chat` | AI 채팅 |
+| GET | `/api/v1/personas` | 페르소나 목록 |
+| POST | `/api/v1/personas` | 페르소나 생성 |
+| GET | `/api/v1/personas/:id` | 페르소나 상세 |
+| PUT | `/api/v1/personas/:id` | 페르소나 수정 |
+| DELETE | `/api/v1/personas/:id` | 페르소나 삭제 |
 | GET | `/api/v1/settings/oidc` | OIDC 설정 |
+| PUT | `/api/v1/settings/oidc` | OIDC 설정 수정 |
+| POST | `/api/v1/settings/oidc/test` | OIDC 연결 테스트 |
 | GET | `/api/v1/auth/me` | 현재 사용자 |
+| GET | `/api/v1/auth/oidc/login` | OIDC 로그인 |
+| POST | `/api/v1/auth/oidc/callback` | OIDC 콜백 |
 
 ## 스크립트
 
@@ -176,6 +204,22 @@ DevSecOPS/
 | 3.3 | 탐지 상세/상태 관리 UI | ✅ 완료 |
 | 3.4 | 리포트 UI | ✅ 완료 |
 | 3.5 | 설정 페이지 (OIDC, 데이터소스, 알림) | ✅ 완료 |
+| Phase 4 | 고급 기능 | ✅ 완료 |
+| 4.1 | 리포트 생성 (일/주/월 + 과거 기간) 및 삭제 | ✅ 완료 |
+| 4.2 | Sigma TAG/MITRE 메타데이터 (룰 태그, MITRE 카탈로그) | ✅ 완료 |
+| 4.3 | Agent 실행 / 실행 이력 관리 | ✅ 완료 |
+| 4.4 | AI 채팅 + 페르소나 | ✅ 완료 |
+
+### 룰 메타데이터 (Sigma TAG 참고)
+
+룰에 MITRE ATT&CK 전술·기법과 자유 태그를 붙일 수 있습니다. MITRE 식별자(TAG)만 참조하고
+Sigma 시그니처/본문은 복사하지 않는 방식을 사용합니다 (DRL 1.1 준수).
+
+- `tags` : 자유 태그 (예: `attack.t1110`)
+- `mitre_tactics` / `mitre_techniques` : MITRE ATT&CK 메타데이터
+- RuleFormDialog에서 MITRE 카탈로그를 검색해 선택 가능
+- RuleDetailPage에서 태그/전술/기법 배지로 표시
+- 프론트엔드는 API가 JSON 문자열로 반환하는 배열 필드를 안전하게 파싱 (`parseStringArray`)
 
 ### 룰 엔진 지원 패턴
 
@@ -208,17 +252,22 @@ DevSecOPS/
 
 | 단계 | 내용 | 상태 |
 |------|------|------|
-| 4.1 | 실제 로그 데이터 수집 파이프라인 | 🔲 예정 |
-| 4.2 | Keycloak OIDC 연동 | 🔲 예정 |
-| 4.3 | 알림 채널 (Slack/이메일) 연동 | 🔲 예정 |
-| 4.4 | 성능 테스트 및 최적화 | 🔲 예정 |
+| 5.1 | 실제 로그 데이터 수집 파이프라인 | 🔲 예정 |
+| 5.2 | Keycloak OIDC 연동 | 🔲 예정 |
+| 5.3 | 알림 채널 실제 전송 (Slack/이메일) | 🔲 예정 |
+| 5.4 | 성능 테스트 및 최적화 | 🔲 예정 |
 
 ### 브라우저에서 확인
 
 ```
 http://localhost:3000           → Dashboard
 http://localhost:3000/rules     → Rules 목록
+http://localhost:3000/rules/:id → Rule 상세 (태그/MITRE)
 http://localhost:3000/detections → Detections 목록
+http://localhost:3000/agents    → Agents 목록
+http://localhost:3000/chat      → AI 채팅
+http://localhost:3000/reports   → Reports 목록
+http://localhost:3000/settings  → Settings (OIDC/데이터소스/알림)
 ```
 
 ## 라이선스
