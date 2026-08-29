@@ -83,7 +83,7 @@ pub async fn list_rules(
 
 pub async fn get_rule(
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let rule = sqlx::query_as::<_, aads_core::models::Rule>(
         "SELECT * FROM rules WHERE id = ?"
@@ -143,7 +143,7 @@ pub async fn create_rule(
 
 pub async fn update_rule(
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(req): Json<UpdateRuleRequest>,
 ) -> Result<Json<Value>, AppError> {
     let rule_version = sqlx::query_as::<_, aads_core::models::Rule>(
@@ -208,7 +208,7 @@ pub async fn update_rule(
 
 pub async fn delete_rule(
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let _existing = sqlx::query_as::<_, aads_core::models::Rule>(
         "SELECT * FROM rules WHERE id = ?"
@@ -232,7 +232,7 @@ pub async fn delete_rule(
 
 pub async fn test_rule(
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(req): Json<TestRuleRequest>,
 ) -> Result<Json<Value>, AppError> {
     let rule = sqlx::query_as::<_, aads_core::models::Rule>(

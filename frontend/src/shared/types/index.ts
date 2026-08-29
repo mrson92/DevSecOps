@@ -50,7 +50,7 @@ export interface Detection {
   window_end: string
   matched_count: number
   group_key: string | null
-  context: Record<string, unknown> | null
+  context: string | null
   status: 'open' | 'acknowledged' | 'investigating' | 'resolved' | 'false_positive' | 'suppressed'
   assignee: string | null
   created_at: string

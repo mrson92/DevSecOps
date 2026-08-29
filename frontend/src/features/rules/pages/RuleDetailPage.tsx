@@ -14,7 +14,7 @@ export function RuleDetailPage() {
   const queryClient = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
 
-  const { data: ruleData, isLoading } = useQuery<ApiResponse<Rule>>({
+  const { data: ruleData, isLoading, isError, error } = useQuery<ApiResponse<Rule>>({
     queryKey: ['rule', id],
     queryFn: () => api.get(`/rules/${id}`).then((res) => res.data),
     enabled: !!id,
@@ -30,6 +30,18 @@ export function RuleDetailPage() {
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-64">Loading...</div>
+  }
+
+  if (isError) {
+    return (
+      <div className="text-center py-8 space-y-3">
+        <p className="text-red-600 font-medium">Failed to load rule</p>
+        <p className="text-sm text-muted-foreground">{(error as Error).message}</p>
+        <Button variant="outline" onClick={() => navigate('/rules')}>
+          Back to Rules
+        </Button>
+      </div>
+    )
   }
 
   const rule = ruleData?.data
