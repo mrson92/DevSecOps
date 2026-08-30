@@ -51,5 +51,10 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
             .await?;
     }
 
+    // Batch-2 MITRE-mapped rules (INSERT OR IGNORE -> idempotent on every startup).
+    sqlx::query(include_str!("../../../migrations/008_add_mitre_rules.sql"))
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }
