@@ -5,9 +5,14 @@ import api from '@/shared/lib/api'
 import type { Rule, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { RuleFormDialog } from '../components/RuleFormDialog'
+import { MitreGroupsView } from '../components/MitreGroupsView'
+
+type ViewMode = 'list' | 'mitre'
 
 export function RulesPage() {
+  const [view, setView] = useState<ViewMode>('list')
   const [page, setPage] = useState(1)
   const [dialogOpen, setDialogOpen] = useState(false)
   const size = 20
@@ -17,9 +22,11 @@ export function RulesPage() {
     queryFn: () => api.get(`/rules?page=${page}&size=${size}`).then((res) => res.data),
   })
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-64">Loading...</div>
-  }
+  const { data: allRulesData, isLoading: allRulesLoading } = useQuery<ApiResponse<Rule[]>>({
+    queryKey: ['rules', 'all'],
+    queryFn: () => api.get(`/rules?page=1&size=1000`).then((res) => res.data),
+    enabled: view === 'mitre',
+  })
 
   const rules = rulesData?.data ?? []
   const meta = rulesData?.meta
@@ -32,76 +39,105 @@ export function RulesPage() {
         <Button onClick={() => setDialogOpen(true)}>Create Rule</Button>
       </div>
 
-      <div className="grid gap-4">
-        {rules.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              No rules configured yet. Create your first rule to start detecting anomalies.
-            </CardContent>
-          </Card>
-        ) : (
-          rules.map((rule) => (
-            <Link key={rule.id} to={`/rules/${rule.id}`}>
-              <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-lg">{rule.name}</CardTitle>
-                  <span
-                    className={`px-2 py-1 text-xs rounded-full ${
-                      rule.severity === 'critical'
-                        ? 'bg-red-100 text-red-800'
-                        : rule.severity === 'high'
-                        ? 'bg-orange-100 text-orange-800'
-                        : rule.severity === 'medium'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-green-100 text-green-800'
-                    }`}
-                  >
-                    {rule.severity}
-                  </span>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">{rule.description}</p>
-                  <div className="mt-2 flex gap-2 text-xs text-muted-foreground">
-                    <span>Type: {rule.rule_type}</span>
-                    <span>•</span>
-                    <span>Window: {rule.window_sec}s</span>
-                    <span>•</span>
-                    <span>Version: {rule.version}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))
-        )}
+      <div className="inline-flex items-center rounded-lg bg-muted p-1">
+        <button
+          onClick={() => setView('list')}
+          className={cn(
+            'px-3 py-1 text-sm font-medium rounded-md transition-colors',
+            view === 'list' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          List
+        </button>
+        <button
+          onClick={() => setView('mitre')}
+          className={cn(
+            'px-3 py-1 text-sm font-medium rounded-md transition-colors',
+            view === 'mitre' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          MITRE Groups
+        </button>
       </div>
 
-      {meta && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Showing {rules.length} of {meta.total} rules
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Previous
-            </Button>
-            <span className="px-3 py-1 text-xs">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
+      {view === 'mitre' ? (
+        <MitreGroupsView rules={allRulesData?.data ?? []} isLoading={allRulesLoading} />
+      ) : (
+        <>
+          <div className="grid gap-4">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-64">Loading...</div>
+            ) : rules.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No rules configured yet. Create your first rule to start detecting anomalies.
+                </CardContent>
+              </Card>
+            ) : (
+              rules.map((rule) => (
+                <Link key={rule.id} to={`/rules/${rule.id}`}>
+                  <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-lg">{rule.name}</CardTitle>
+                      <span
+                        className={`px-2 py-1 text-xs rounded-full ${
+                          rule.severity === 'critical'
+                            ? 'bg-red-100 text-red-800'
+                            : rule.severity === 'high'
+                            ? 'bg-orange-100 text-orange-800'
+                            : rule.severity === 'medium'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-green-100 text-green-800'
+                        }`}
+                      >
+                        {rule.severity}
+                      </span>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">{rule.description}</p>
+                      <div className="mt-2 flex gap-2 text-xs text-muted-foreground">
+                        <span>Type: {rule.rule_type}</span>
+                        <span>•</span>
+                        <span>Window: {rule.window_sec}s</span>
+                        <span>•</span>
+                        <span>Version: {rule.version}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))
+            )}
           </div>
-        </div>
+
+          {meta && (
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                Showing {rules.length} of {meta.total} rules
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Previous
+                </Button>
+                <span className="px-3 py-1 text-xs">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <RuleFormDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
