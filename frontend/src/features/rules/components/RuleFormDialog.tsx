@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/shared/lib/api'
 import type { Rule, ApiResponse } from '@/shared/types'
 import { Button } from '@/components/ui/button'
+import { parseStringArray } from '@/shared/lib/mitre'
 
 interface RuleFormDialogProps {
   open: boolean
@@ -36,17 +37,6 @@ interface MitreTechnique {
   id: string
   name: string
   tactic: string
-}
-
-function parseStringArray(value: string[] | string | null | undefined): string[] {
-  if (!value) return []
-  if (Array.isArray(value)) return value
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed.map(String) : []
-  } catch {
-    return []
-  }
 }
 
 export function RuleFormDialog({ open, onClose, rule }: RuleFormDialogProps) {

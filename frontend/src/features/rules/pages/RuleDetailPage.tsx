@@ -5,19 +5,11 @@ import api from '@/shared/lib/api'
 import type { Rule, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { parseStringArray } from '@/shared/lib/mitre'
+import { MitreBadges } from '@/shared/components/ui/MitreBadges'
 import { RuleFormDialog } from '../components/RuleFormDialog'
 import { RuleTestPanel } from '../components/RuleTestPanel'
 
-function parseStringArray(value: string[] | string | null | undefined): string[] {
-  if (!value) return []
-  if (Array.isArray(value)) return value
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed.map(String) : []
-  } catch {
-    return []
-  }
-}
 
 export function RuleDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -138,24 +130,10 @@ export function RuleDetailPage() {
             <CardTitle className="text-sm font-medium">Tags & MITRE</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {tactics.length > 0 && (
+            {(tactics.length > 0 || techniques.length > 0) && (
               <div className="space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Tactics</span>
-                <div className="flex flex-wrap gap-2">
-                  {tactics.map((t) => (
-                    <span key={t} className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-700 font-mono">{t}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {techniques.length > 0 && (
-              <div className="space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Techniques</span>
-                <div className="flex flex-wrap gap-2">
-                  {techniques.map((t) => (
-                    <span key={t} className="px-2 py-1 text-xs rounded-full bg-indigo-50 text-indigo-700 font-mono">{t}</span>
-                  ))}
-                </div>
+                <span className="text-xs font-medium text-muted-foreground">MITRE ATT&CK</span>
+                <MitreBadges tactics={rule.mitre_tactics} techniques={rule.mitre_techniques} />
               </div>
             )}
             {tags.length > 0 && (

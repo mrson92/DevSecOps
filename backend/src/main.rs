@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
         .route("/api/v1/dashboard/timeline", get(aads_api::handlers::dashboard::get_timeline))
         .route("/api/v1/dashboard/top-rules", get(aads_api::handlers::dashboard::get_top_rules))
         .route("/api/v1/dashboard/top-ips", get(aads_api::handlers::dashboard::get_top_ips))
+        .route("/api/v1/dashboard/mitre-tactics", get(aads_api::handlers::dashboard::get_mitre_tactics))
         .route("/api/v1/engine/run", axum::routing::post(aads_api::handlers::engine::run_rules))
         .route("/api/v1/engine/run/{rule_id}", axum::routing::post(aads_api::handlers::engine::run_single_rule))
         .route("/api/v1/reports", get(aads_api::handlers::reports::list_reports).post(aads_api::handlers::reports::generate_report))

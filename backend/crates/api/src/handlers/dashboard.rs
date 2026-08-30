@@ -134,3 +134,47 @@ pub async fn get_top_ips(
         "data": top_ips
     })))
 }
+
+pub async fn get_mitre_tactics(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    // Each rule can carry multiple tactics (stored as a JSON array string like
+    // '["TA0006","TA0007"]'). We explode each detection's rule tactics and count
+    // how many detections fall into each MITRE tactic over the last 7 days.
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let rule_rows: Vec<(String, String)> = sqlx::query_as(
+        r#"SELECT DISTINCT re.id, r.mitre_tactics AS tactics
+           FROM rule_executions re
+           JOIN rules r ON re.rule_id = r.id
+           WHERE re.detected_at >= datetime('now', '-7 days')
+             AND r.mitre_tactics IS NOT NULL
+             AND r.mitre_tactics <> ''
+             AND r.mitre_tactics <> '[]' "#
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(format!("Failed to fetch tactic mapping: {}", e)))?;
+
+    for (_detection_id, tactics) in rule_rows {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&tactics) {
+            if let Some(arr) = v.as_array() {
+                for item in arr {
+                    if let Some(tactic) = item.as_str() {
+                        *counts.entry(tactic.to_string()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut data: Vec<Value> = counts
+        .iter()
+        .map(|(tactic, count)| json!({ "tactic": tactic, "count": count }))
+        .collect();
+    data.sort_by(|a, b| b["count"].as_i64().unwrap_or(0).cmp(&a["count"].as_i64().unwrap_or(0)));
+
+    Ok(Json(json!({
+        "success": true,
+        "data": data
+    })))
+}

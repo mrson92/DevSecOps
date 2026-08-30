@@ -5,11 +5,14 @@ import api from '@/shared/lib/api'
 import type { Detection, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { MitreBadges } from '@/shared/components/ui/MitreBadges'
+import { MITRE_TACTICS } from '@/shared/lib/mitre'
 import { useRuleName } from '../hooks/useRuleName'
 
 interface DetectionFilters {
   severity?: string
   status?: string
+  tactic?: string
   page: number
   size: number
 }
@@ -27,6 +30,7 @@ export function DetectionsPage() {
       params.set('size', String(filters.size))
       if (filters.severity) params.set('severity', filters.severity)
       if (filters.status) params.set('status', filters.status)
+      if (filters.tactic) params.set('tactic', filters.tactic)
       return api.get(`/detections?${params.toString()}`).then((res) => res.data)
     },
   })
@@ -81,6 +85,21 @@ export function DetectionsPage() {
                   <option value="false_positive">False Positive</option>
                 </select>
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">MITRE Tactic</label>
+                <select
+                  value={filters.tactic ?? ''}
+                  onChange={(e) => updateFilter('tactic', e.target.value || undefined)}
+                  className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                >
+                  <option value="">All</option>
+                  {Object.entries(MITRE_TACTICS).map(([id, name]) => (
+                    <option key={id} value={id}>
+                      {name} ({id})
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="flex items-end">
                 <Button
                   variant="outline"
@@ -130,6 +149,13 @@ export function DetectionsPage() {
                       <span>Matched: {detection.matched_count}</span>
                       <span>Rule ver: v{detection.rule_version}</span>
                       <span>Detected: {new Date(detection.detected_at).toLocaleString()}</span>
+                    </div>
+                    <div className="mt-3">
+                      <MitreBadges
+                        tactics={byId(detection.rule_id)?.mitre_tactics}
+                        techniques={byId(detection.rule_id)?.mitre_techniques}
+                        compact
+                      />
                     </div>
                   </CardContent>
                 </Card>

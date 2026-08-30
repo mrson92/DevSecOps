@@ -17,6 +17,7 @@ pub struct DetectionFilterParams {
     pub rule_id: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
+    pub tactic: Option<String>,
 }
 
 pub async fn list_detections(
@@ -49,6 +50,12 @@ pub async fn list_detections(
         conditions.push("r.severity = ?");
         bind_values.push(severity.clone());
     }
+    if let Some(ref tactic) = params.tactic {
+        conditions.push("r.mitre_tactics LIKE ?");
+        bind_values.push(format!("%{}\"%", tactic));
+    }
+
+    let needs_rules_join = params.severity.is_some() || params.tactic.is_some();
 
     let where_clause = if conditions.is_empty() {
         String::new()
@@ -56,7 +63,7 @@ pub async fn list_detections(
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    let join_clause = if params.severity.is_some() {
+    let join_clause = if needs_rules_join {
         "JOIN rules r ON re.rule_id = r.id"
     } else {
         ""

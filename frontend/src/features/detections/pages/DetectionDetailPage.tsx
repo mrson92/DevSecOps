@@ -5,6 +5,8 @@ import api from '@/shared/lib/api'
 import type { Detection, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { MitreBadges } from '@/shared/components/ui/MitreBadges'
+import { parseStringArray } from '@/shared/lib/mitre'
 import { useRuleName } from '../hooks/useRuleName'
 
 type EvidenceItem = Record<string, unknown>
@@ -220,6 +222,11 @@ export function DetectionDetailPage() {
     return <div className="text-center py-8">Detection not found</div>
   }
 
+  const rule = byId(detection.rule_id)
+  const hasMitre =
+    parseStringArray(rule?.mitre_tactics).length > 0 ||
+    parseStringArray(rule?.mitre_techniques).length > 0
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -312,6 +319,20 @@ export function DetectionDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {hasMitre && (
+        <Card>
+          <CardHeader>
+            <CardTitle>MITRE ATT&CK</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-3">
+              This detection maps to the following MITRE ATT&CK techniques via its rule.
+            </p>
+            <MitreBadges tactics={rule?.mitre_tactics} techniques={rule?.mitre_techniques} />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

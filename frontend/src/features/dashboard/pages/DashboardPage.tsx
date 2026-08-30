@@ -6,6 +6,7 @@ import { TimelineChart } from '../components/TimelineChart'
 import { SeverityChart } from '../components/SeverityChart'
 import { TopRulesChart } from '../components/TopRulesChart'
 import { TopIpsChart } from '../components/TopIpsChart'
+import { MitreTacticsChart } from '../components/MitreTacticsChart'
 
 export function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useQuery<ApiResponse<DashboardStats>>({
@@ -27,6 +28,11 @@ export function DashboardPage() {
   const { data: topIps } = useQuery<ApiResponse<Array<{ ip: string; count: number }>>>({
     queryKey: ['dashboard-top-ips'],
     queryFn: () => api.get('/dashboard/top-ips').then((res) => res.data),
+  })
+
+  const { data: mitreTactics } = useQuery<ApiResponse<Array<{ tactic: string; count: number }>>>({
+    queryKey: ['dashboard-mitre-tactics'],
+    queryFn: () => api.get('/dashboard/mitre-tactics').then((res) => res.data),
   })
 
   if (statsLoading) {
@@ -116,6 +122,15 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>MITRE ATT&CK Tactics (7 days)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <MitreTacticsChart data={mitreTactics?.data ?? []} />
+        </CardContent>
+      </Card>
     </div>
   )
 }

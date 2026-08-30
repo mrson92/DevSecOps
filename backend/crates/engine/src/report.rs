@@ -27,8 +27,15 @@ pub struct ReportContent {
     pub top_ips: Vec<IpStat>,
     pub severity_breakdown: SeverityBreakdown,
     pub hourly_distribution: Vec<u32>,
+    pub mitre_tactics: Vec<MitreTacticStat>,
     pub recommendations: Vec<String>,
     pub ai_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MitreTacticStat {
+    pub tactic: String,
+    pub detection_count: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -58,6 +65,8 @@ pub struct RuleStat {
     pub severity: String,
     pub detection_count: i64,
     pub total_matched: i64,
+    pub mitre_tactics: Vec<String>,
+    pub mitre_techniques: Vec<String>,
     pub recommendation: String,
     pub evidence: Vec<String>,
 }
@@ -143,9 +152,10 @@ impl ReportGenerator {
 
         let severity = self.fetch_severity_breakdown(start, end).await?;
         let hourly = self.fetch_hourly_distribution(start, end).await?;
+        let mitre_tactics = self.fetch_mitre_tactics(start, end).await?;
 
         let recommendations = build_recommendations(&top_rules, &severity);
-        let ai_summary = self.generate_ai_summary(&summary, &top_rules, &top_ips, &severity).await;
+        let ai_summary = self.generate_ai_summary(&summary, &top_rules, &top_ips, &severity, &mitre_tactics).await;
 
         let content = ReportContent {
             period: PeriodInfo {
@@ -158,6 +168,7 @@ impl ReportGenerator {
             top_ips,
             severity_breakdown: severity,
             hourly_distribution: hourly,
+            mitre_tactics,
             recommendations,
             ai_summary,
         };
@@ -314,8 +325,8 @@ impl ReportGenerator {
     }
 
     async fn fetch_top_rules(&self, start: &str, end: &str, limit: i64) -> Result<Vec<RuleStat>, AppError> {
-        let rows: Vec<(String, String, String, i64, i64, String)> = sqlx::query_as(
-            r#"SELECT r.id, r.name, r.severity, COUNT(re.id) as detection_count, SUM(re.matched_count) as total_matched, r."references"
+        let rows: Vec<(String, String, String, i64, i64, String, String, String)> = sqlx::query_as(
+            r#"SELECT r.id, r.name, r.severity, COUNT(re.id) as detection_count, SUM(re.matched_count) as total_matched, r."references", COALESCE(r.mitre_tactics,'[]'), COALESCE(r.mitre_techniques,'[]')
                FROM rule_executions re
                JOIN rules r ON re.rule_id = r.id
                WHERE re.detected_at >= ? AND re.detected_at <= ?
@@ -330,7 +341,7 @@ impl ReportGenerator {
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch top rules: {}", e)))?;
 
-        Ok(rows.into_iter().map(|(rule_id, rule_name, severity, detection_count, total_matched, references)| {
+        Ok(rows.into_iter().map(|(rule_id, rule_name, severity, detection_count, total_matched, references, tactics, techniques)| {
             let recommendation = recommendation_for(&severity, &references);
             RuleStat {
                 rule_id,
@@ -338,6 +349,8 @@ impl ReportGenerator {
                 severity,
                 detection_count,
                 total_matched,
+                mitre_tactics: parse_json_string_array(&tactics),
+                mitre_techniques: parse_json_string_array(&techniques),
                 recommendation,
                 evidence: Vec::new(),
             }
@@ -407,6 +420,7 @@ impl ReportGenerator {
         top_rules: &[RuleStat],
         top_ips: &[IpStat],
         severity: &SeverityBreakdown,
+        mitre_tactics: &[MitreTacticStat],
     ) -> Option<String> {
         let api_url = std::env::var("REPORT_SUMMARY_API_URL").ok()?;
         if api_url.trim().is_empty() {
@@ -419,12 +433,15 @@ impl ReportGenerator {
         let data = serde_json::json!({
             "summary": summary,
             "top_rules": top_rules.iter().map(|r| {
-                serde_json::json!({ "name": r.rule_name, "severity": r.severity, "detections": r.detection_count })
+                serde_json::json!({ "name": r.rule_name, "severity": r.severity, "detections": r.detection_count, "mitre_tactics": r.mitre_tactics })
             }).collect::<Vec<_>>(),
             "top_ips": top_ips.iter().map(|i| {
                 serde_json::json!({ "ip": i.ip, "detections": i.detection_count })
             }).collect::<Vec<_>>(),
             "severity_breakdown": severity,
+            "mitre_tactics": mitre_tactics.iter().map(|t| {
+                serde_json::json!({ "tactic": t.tactic, "detections": t.detection_count })
+            }).collect::<Vec<_>>(),
         });
 
         let payload = serde_json::json!({
@@ -432,7 +449,7 @@ impl ReportGenerator {
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a security operations analyst. Summarize the report findings in Korean: notable threats, trends, and prioritized next actions. Respond concisely in 3-5 sentences."
+                    "content": "You are a security operations analyst. Summarize the report findings in Korean: notable threats, trends, and prioritized next actions. Reference the MITRE ATT&CK tactics involved. Respond concisely in 3-5 sentences."
                 },
                 { "role": "user", "content": serde_json::to_string_pretty(&data).unwrap_or_default() }
             ],
@@ -508,6 +525,37 @@ impl ReportGenerator {
         Ok(hourly)
     }
 
+    async fn fetch_mitre_tactics(&self, start: &str, end: &str) -> Result<Vec<MitreTacticStat>, AppError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            r#"SELECT re.id, r.mitre_tactics AS tactics
+               FROM rule_executions re
+               JOIN rules r ON re.rule_id = r.id
+               WHERE re.detected_at >= ? AND re.detected_at <= ?
+                 AND r.mitre_tactics IS NOT NULL
+                 AND r.mitre_tactics <> ''
+                 AND r.mitre_tactics <> '[]'"#
+        )
+        .bind(start)
+        .bind(end)
+        .fetch_all(&self.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch MITRE tactics: {}", e)))?;
+
+        let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for (_id, tactics) in rows {
+            for tactic in parse_json_string_array(&tactics) {
+                *counts.entry(tactic).or_insert(0) += 1;
+            }
+        }
+
+        let mut data: Vec<MitreTacticStat> = counts
+            .into_iter()
+            .map(|(tactic, detection_count)| MitreTacticStat { tactic, detection_count })
+            .collect();
+        data.sort_by(|a, b| b.detection_count.cmp(&a.detection_count));
+        Ok(data)
+    }
+
     fn generate_summary_text(&self, content: &ReportContent) -> String {
         let s = &content.summary;
         let mut text = format!(
@@ -523,6 +571,13 @@ impl ReportGenerator {
             .collect();
         if !top.is_empty() {
             text.push_str(&format!("\n주요 위협: {}", top.join(", ")));
+        }
+
+        if !content.mitre_tactics.is_empty() {
+            let mitre: Vec<String> = content.mitre_tactics.iter().take(5)
+                .map(|t| format!("{} ({}건)", t.tactic, t.detection_count))
+                .collect();
+            text.push_str(&format!("\nMITRE 전술: {}", mitre.join(", ")));
         }
 
         if !content.recommendations.is_empty() {
@@ -639,6 +694,23 @@ fn recommendation_for(severity: &str, references: &str) -> String {
         "low" => "정보성 탐지 - 일상 모니터링 대상".to_string(),
         _ => "통상 모니터링 대상".to_string(),
     }
+}
+
+fn parse_json_string_array(value: &str) -> Vec<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "[]" {
+        return Vec::new();
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(arr) = v.as_array() {
+            return arr
+                .iter()
+                .filter_map(|x| x.as_str())
+                .map(str::to_string)
+                .collect();
+        }
+    }
+    Vec::new()
 }
 
 fn extract_references(references: &str) -> String {
