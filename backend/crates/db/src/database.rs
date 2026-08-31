@@ -56,5 +56,10 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // 2차 LLM 위협 분석 전용 페르소나 (INSERT OR IGNORE -> idempotent).
+    sqlx::query(include_str!("../../../migrations/009_threat_analyst_persona.sql"))
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }

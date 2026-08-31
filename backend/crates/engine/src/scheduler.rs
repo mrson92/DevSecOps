@@ -69,7 +69,7 @@ impl Scheduler {
                 }
             }
 
-            let agent_runner = AgentRunner::new(state.db.clone());
+            let agent_runner = AgentRunner::new(state.db.clone(), state.es.clone());
             match agent_runner.run_scheduled_agents().await {
                 Ok(runs) => {
                     if !runs.is_empty() {

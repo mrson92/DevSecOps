@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::Utc;
 use sqlx::SqlitePool;
 use tracing::{info, error};
@@ -5,10 +7,14 @@ use uuid::Uuid;
 
 use aads_core::models::{AiAgent, AiAgentRun, Persona};
 use aads_core::error::AppError;
+use aads_core::state::ElasticSearchClientTrait;
+
+use crate::stat::SecurityStat;
 
 #[derive(Clone)]
 pub struct AgentRunner {
     db: SqlitePool,
+    es: Arc<dyn ElasticSearchClientTrait>,
     http_client: reqwest::Client,
 }
 
@@ -20,9 +26,10 @@ pub struct AgentConfig {
 }
 
 impl AgentRunner {
-    pub fn new(db: SqlitePool) -> Self {
+    pub fn new(db: SqlitePool, es: Arc<dyn ElasticSearchClientTrait>) -> Self {
         Self {
             db,
+            es,
             http_client: reqwest::Client::new(),
         }
     }
@@ -178,6 +185,10 @@ impl AgentRunner {
         .await
         .unwrap_or_default();
 
+        // 2차 분석 입력: ES의 security_stat(고위험군 집계 이벤트)을 조회한다.
+        // raw 로그가 아닌 AI 검토용 최적화 통계만을 LLM에 전달한다.
+        let security_stats = self.load_security_stats().await;
+
         let context = serde_json::json!({
             "agent": {
                 "name": agent.name,
@@ -187,10 +198,43 @@ impl AgentRunner {
             "recent_logs_count": recent_logs.len(),
             "recent_logs_sample": recent_logs.iter().take(10).cloned().collect::<Vec<_>>(),
             "recent_detections": recent_detections,
+            "security_stats": security_stats,
             "timestamp": Utc::now().to_rfc3339(),
         });
 
         Ok(serde_json::to_string_pretty(&context).unwrap_or_default())
+    }
+
+    /// ES `security_stat` 인덱스에서 최근 고위험군 집계 통계를 조회한다.
+    ///
+    /// 최신순 20건을 가져와 LLM 판단 입력으로 사용한다. 인덱스가 없거나
+    /// 조회에 실패하면 빈 벡터를 돌려 AI 실행 자체는 차단하지 않는다.
+    async fn load_security_stats(&self) -> Vec<SecurityStat> {
+        let index = "security_stat";
+        if !self.es.index_exists(index).await.unwrap_or(false) {
+            return Vec::new();
+        }
+
+        let query = serde_json::json!({
+            "sort": [{ "timestamp": "desc" }],
+            "size": 20
+        });
+
+        match self.es.search(index, query).await {
+            Ok(resp) => {
+                let hits = resp["hits"]["hits"].as_array().cloned().unwrap_or_default();
+                hits.into_iter()
+                    .filter_map(|hit| {
+                        let src = hit.get("_source")?;
+                        serde_json::from_value::<SecurityStat>(src.clone()).ok()
+                    })
+                    .collect()
+            }
+            Err(e) => {
+                error!("Failed to load security_stats for agent context: {}", e);
+                Vec::new()
+            }
+        }
     }
 }
 

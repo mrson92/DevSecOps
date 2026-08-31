@@ -149,7 +149,7 @@ pub async fn run_agent_now(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Agent {} not found", id)))?;
 
-    let runner = AgentRunner::new(state.db.clone());
+    let runner = AgentRunner::new(state.db.clone(), state.es.clone());
     let run = runner.run_agent(&agent).await?;
 
     Ok(Json(json!({
