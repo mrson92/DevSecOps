@@ -80,6 +80,9 @@ hex = "0.4"
 # Rate limiting
 governor = "0.8"
 
+# Regex
+regex = "1"
+
 [package]
 name = "aads-backend"
 version.workspace = true

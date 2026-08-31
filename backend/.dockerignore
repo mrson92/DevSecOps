@@ -1,0 +1,6 @@
+*
+!target/release/aads-backend
+!config.toml
+!migrations/**
+!Dockerfile.fast
+!Cargo.toml

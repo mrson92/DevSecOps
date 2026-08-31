@@ -56,6 +56,7 @@ async fn main() -> Result<()> {
         .route("/api/v1/mitre/techniques", get(aads_api::handlers::mitre::list_techniques))
         .route("/api/v1/detections", get(aads_api::handlers::detections::list_detections))
         .route("/api/v1/detections/{id}", get(aads_api::handlers::detections::get_detection).patch(aads_api::handlers::detections::update_detection))
+        .route("/api/v1/logs/ingest", axum::routing::post(aads_api::handlers::ingest::ingest_logs))
         .route("/api/v1/dashboard/stats", get(aads_api::handlers::dashboard::get_stats))
         .route("/api/v1/dashboard/timeline", get(aads_api::handlers::dashboard::get_timeline))
         .route("/api/v1/dashboard/top-rules", get(aads_api::handlers::dashboard::get_top_rules))

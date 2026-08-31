@@ -4,6 +4,7 @@ pub mod chat;
 pub mod dashboard;
 pub mod detections;
 pub mod engine;
+pub mod ingest;
 pub mod mitre;
 pub mod personas;
 pub mod reports;

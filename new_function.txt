@@ -1,0 +1,38 @@
+2. 보안 위협 판단을 위한 추천 알고리즘 및 AI 기법
+목적에 따라 경량 머신러닝(ML)과 생성형 AI / LLM을 조합하여 단계별로 적용하는 것이 가장 효율적입니다.
+
+[Raw Log] 
+   └─► (Rule Engine) ──► [Security_stat] 
+                               │
+                               ├─► (1차: 머신러닝 이상 탐지 / 점수화)
+                               │
+                               └─► (2차: LLM / 생성형 AI 위협 분석 & 리포팅)
+① 1차 분석: 경량 머신러닝 (Anomaly Detection & Scoring)
+Security_stat에 쌓인 데이터 중 실제 AI(LLM)에 보낼 우선순위를 정하고 위협 점수를 계산합니다.
+
+Isolation Forest / One-Class SVM
+
+활용: Rule에 걸린 통계 데이터 중 "평소 패턴과 정밀하게 다른 예외적 행위"를 분류.
+
+특징: 라벨링된 정답 데이터가 없어도 무감독 학습(Unsupervised Learning)으로 이상치를 빠르게 선별 가능.
+
+XGBoost / LightGBM (Supervised Learning)
+
+활용: 보안 분석가가 과거 오탐(FP)/진탐(TP)으로 라벨링한 데이터를 학습시켜 오탐 필터링 및 오탐 확률 산출.
+
+Graph Neural Networks (GNN) 또는 Markov Chain
+
+활용: 탐지된 이벤트 간의 연결 관계(IP-계정-파일-프로세스)나 공격 시퀀스 패턴 분석.
+
+② 2차 분석: LLM 기반 문맥 심층 분석 (LLM Threat Analysis)
+1차 분석을 통해 필터링/점수화된 "고위험군 이벤트 세트"를 LLM에 전달하여 최종 판정과 조치 가이드를 얻습니다.
+
+Zero-Shot / Few-Shot Prompting (Small Language Model 활용 가능)
+
+활용: JSON 형태의 요약된 Security_stat + 개체 정보를 LLM에 전달하여 진탐/오탐 여부 판단, 위협 심각도(Severity) 재평가, MITRE ATT&CK 기술 매핑.
+
+Agentic Workflow (예: LangChain, LlamaIndex, AutoGen 활용)
+
+LLM이 단순히 텍스트만 읽는 것이 아니라, 필요 시 추가적인 정보를 더 조회하도록 도구(Tool) 사용 권한을 줍니다.
+
+예: "이 IP의 과거 7일간 통계를 더 조회해줘", "이 파일 Hash의 VirusTotal 결과를 조회해줘" 등 파이프라인 형성.
