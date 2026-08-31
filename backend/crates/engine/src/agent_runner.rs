@@ -9,6 +9,7 @@ use aads_core::models::{AiAgent, AiAgentRun, Persona};
 use aads_core::error::AppError;
 use aads_core::state::ElasticSearchClientTrait;
 
+use crate::ml::score_security_stats;
 use crate::stat::SecurityStat;
 
 #[derive(Clone)]
@@ -189,6 +190,10 @@ impl AgentRunner {
         // raw 로그가 아닌 AI 검토용 최적화 통계만을 LLM에 전달한다.
         let security_stats = self.load_security_stats().await;
 
+        // 1차 분석: 보안 위협 후보 통계를 무감독 이상탐지로 점수화해
+        // LLM이 우선 리뷰할 고위험군과 그 근거(피처별 점수)를 함께 제공한다.
+        let threat_scores = score_security_stats(&security_stats);
+
         let context = serde_json::json!({
             "agent": {
                 "name": agent.name,
@@ -199,6 +204,7 @@ impl AgentRunner {
             "recent_logs_sample": recent_logs.iter().take(10).cloned().collect::<Vec<_>>(),
             "recent_detections": recent_detections,
             "security_stats": security_stats,
+            "threat_scores": threat_scores,
             "timestamp": Utc::now().to_rfc3339(),
         });
 
