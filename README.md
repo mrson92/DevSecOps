@@ -119,6 +119,7 @@ DevSecOPS/
 | GET | `/api/v1/dashboard/timeline` | 타임라인 차트 |
 | GET | `/api/v1/dashboard/top-rules` | 상위 룰 |
 | GET | `/api/v1/dashboard/top-ips` | 상위 IP |
+| POST | `/api/v1/logs/ingest` | 원시 로그 수집·정규화 (access/process) |
 | POST | `/api/v1/engine/run` | 전체 룰 실행 |
 | POST | `/api/v1/engine/run/:id` | 단일 룰 실행 |
 | GET | `/api/v1/reports` | 리포트 목록 |
@@ -209,6 +210,11 @@ DevSecOPS/
 | 4.2 | Sigma TAG/MITRE 메타데이터 (룰 태그, MITRE 카탈로그) | ✅ 완료 |
 | 4.3 | Agent 실행 / 실행 이력 관리 | ✅ 완료 |
 | 4.4 | AI 채팅 + 페르소나 | ✅ 완료 |
+| Phase 5 | 위협 분석 파이프라인 (보안 위협 판단) | ✅ 완료 |
+| 5.1 | 원시 로그 수집 (`POST /api/v1/logs/ingest`) | ✅ 완료 |
+| 5.2 | security_stat 집계·적재 (Rule 검출 → ES) | ✅ 완료 |
+| 5.3 | 1차 무감독 ML 이상탐지·점수화 | ✅ 완료 |
+| 5.4 | 2차 LLM 위협 분석 (TP/FP 판정·심각도·조치) | ✅ 완료 |
 
 ### 룰 메타데이터 (Sigma TAG 참고)
 
@@ -233,6 +239,28 @@ Sigma 시그니처/본문은 복사하지 않는 방식을 사용합니다 (DRL 
 | 필드 존재 | `has("user_id")` |
 | 반복자 래퍼 | `exists(logs, log -> ...)`, `count(filter(logs, log -> ...)) >= N` |
 
+### 보안 위협 판단 파이프라인
+
+Rule 검출 결과를 다단계로 분석해 위협을 판단합니다.
+
+```
+[Raw Log]
+   └─► (ingest) ──► [Rule Engine]
+                        │
+                        └─► [SecurityStat] (집계·요약, ES security_stat 인덱스)
+                              │
+                              ├─► ① 1차: 경량 무감독 ML 이상탐지 · 점수화
+                              │      (Robust z-score 기반: matched_count, unique_ips,
+                              │       unique_paths, unique_methods, status_4xx/5xx, error_rate)
+                              │      → anomaly_score / threat_level (low~critical)
+                              │
+                              └─► ② 2차: LLM 위협 분석 (AgentRunner → persona)
+                                     → TP/FP 판정 · 심각도 재평가 · MITRE 매핑 · 조치
+```
+
+- **1차 분석 (ML)**: 라벨 없는 무감독 이상탐지로 평소 패턴과 크게 다른 예외 이벤트를 선별해 LLM 리뷰 우선순위를 정한다.
+- **2차 분석 (LLM)**: 1차 필터링된 `security_stat` + `threat_scores`를 페르소나(`persona-threat-analyst`)에 전달해 진탐/오탐·심각도·조치를 산출한다.
+
 ### 테스트 결과
 
 | 테스트 | 결과 |
@@ -252,10 +280,10 @@ Sigma 시그니처/본문은 복사하지 않는 방식을 사용합니다 (DRL 
 
 | 단계 | 내용 | 상태 |
 |------|------|------|
-| 5.1 | 실제 로그 데이터 수집 파이프라인 | 🔲 예정 |
-| 5.2 | Keycloak OIDC 연동 | 🔲 예정 |
-| 5.3 | 알림 채널 실제 전송 (Slack/이메일) | 🔲 예정 |
-| 5.4 | 성능 테스트 및 최적화 | 🔲 예정 |
+| 5.5 | 지도학습 기반 오탐 필터링 (XGBoost/fp 학습) | 🔲 예정 |
+| 5.6 | Keycloak OIDC 연동 | 🔲 예정 |
+| 5.7 | 알림 채널 실제 전송 (Slack/이메일) | 🔲 예정 |
+| 5.8 | 성능 테스트 및 최적화 | 🔲 예정 |
 
 ### 브라우저에서 확인
 

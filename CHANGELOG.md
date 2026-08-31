@@ -2,6 +2,36 @@
 
 AADS 프로젝트 변경 이력
 
+## [0.5.0] - 2026-09-01
+
+### Added
+
+#### 백엔드 - 보안 위협 판단 파이프라인
+- **원시 로그 수집 API**: `POST /api/v1/logs/ingest`
+  - access/process 로그 정규화 (regex 파싱, Apache combined 타임스탬프 변환)
+  - `logs` 인덱스 자동 생성 (매핑 포함)
+  - 배치 크기 제한(최대 10,000건), 실패 로그 오류 수집
+- **security_stat 집계**: `engine::stat` 모듈 (AI 검토용 요약 통계)
+  - Rule 검출 결과를 unique IP/path/method, 4xx/5xx, error rate, top IP/path, 샘플 로그로 집계
+  - MITRE 전술/기법 메타데이터 포함
+  - `security_stat` ES 인덱스로 스케줄러 자동 적재
+- **1차 무감독 ML 이상탐지**: `engine::ml` 모듈
+  - Robust z-score(중앙값/MAD) 기반 다중 피처 이상 점수화
+  - anomaly_score / anomaly_percentile / threat_level(low~critical) 산출
+  - AgentRunner가 security_stat을 스코어링해 `threat_scores`로 LLM에 전달
+- **2차 LLM 위협 분석**: AgentRunner가 ES `security_stat` + 1차 점수를 LLM 컨텍스트로 제공
+  - 기본 페르소나 `persona-threat-analyst`(+마이그레이션 009): TP/FP 판정, 심각도 재평가, MITRE 매핑, 조치 가이드
+  - ES 없음/오류 시 빈 리스트로 best-effort 처리
+
+### Changed
+- `database.rs`: 마이그레이션 009 (threat-analyst 페르소나) 실행 추가
+- `agent_runner.rs`: ES 클라이언트 주입, security_stat+threat_scores 컨텍스트 구성
+- `scheduler.rs` / `agents.rs`: `AgentRunner::new` 시그니처에 ES 인자 추가
+
+### 테스트 결과
+- `cargo test --workspace`: ✅ 통과 (27개 테스트, ml/stat 단위 테스트 포함)
+- `cargo build --release --bin aads-backend`: ✅ 통과
+
 ## [0.1.0] - 2026-08-23
 
 ### Added
