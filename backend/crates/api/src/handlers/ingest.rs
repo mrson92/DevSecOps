@@ -3,6 +3,7 @@ use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use std::sync::LazyLock;
 use uuid::Uuid;
 
 use aads_core::error::AppError;
@@ -10,6 +11,22 @@ use aads_core::state::AppState;
 
 const MAX_BATCH_SIZE: usize = 10_000;
 const LOGS_INDEX: &str = "logs";
+
+/// 프로세스 로그 파싱 정규식 (모듈 로드 시 1회 컴파일).
+static PROCESS_LINE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r#"^(?P<ts>\S+ \S+ \S+) (?P<svc>\S+) (?P<session>\S+) (?P<user>\S+) \[(?P<thread>[^\]]+)\] (?P<level>\S+)\s+(?P<logger>\S+)\[(?P<method>\S+):(?P<line>\d+)\] - (?P<message>.*)$"#,
+    )
+    .expect("process log regex must compile")
+});
+
+/// Access 로그 파싱 정규식 (모듈 로드 시 1회 컴파일).
+static ACCESS_LINE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r#"^(?P<ip>\S+) (?P<svc>\S+) (?P<inst>\S+) (?P<user>\S+)\s+\[(?P<ts>[^\]]+)\] (?P<method>\S+) (?P<path>\S+)(?: \S+)? (?P<status>\d{3}) (?P<bytes>\S+) "(?P<referer>[^"]*)" "(?P<ua>[^"]*)" "" (?P<latency>\S+)$"#,
+    )
+    .expect("access log regex must compile")
+});
 
 #[derive(Debug, Deserialize)]
 pub struct IngestRequest {
@@ -184,12 +201,7 @@ fn detect_process_line(line: &str) -> bool {
 }
 
 fn parse_process_line(line: &str) -> Result<Value, String> {
-    let re = regex::Regex::new(
-        r#"^(?P<ts>\S+ \S+ \S+) (?P<svc>\S+) (?P<session>\S+) (?P<user>\S+) \[(?P<thread>[^\]]+)\] (?P<level>\S+)\s+(?P<logger>\S+)\[(?P<method>\S+):(?P<line>\d+)\] - (?P<message>.*)$"#,
-    )
-    .map_err(|e| format!("Regex compile error: {}", e))?;
-
-    let caps = re
+    let caps = PROCESS_LINE_RE
         .captures(line)
         .ok_or_else(|| "Failed to parse process log line".to_string())?;
 
@@ -230,12 +242,7 @@ fn parse_process_line(line: &str) -> Result<Value, String> {
 }
 
 fn parse_access_line(line: &str) -> Result<Value, String> {
-    let re = regex::Regex::new(
-        r#"^(?P<ip>\S+) (?P<svc>\S+) (?P<inst>\S+) (?P<user>\S+)\s+\[(?P<ts>[^\]]+)\] (?P<method>\S+) (?P<path>\S+)(?: \S+)? (?P<status>\d{3}) (?P<bytes>\S+) "(?P<referer>[^"]*)" "(?P<ua>[^"]*)" "" (?P<latency>\S+)$"#,
-    )
-    .map_err(|e| format!("Regex compile error: {}", e))?;
-
-    let caps = re
+    let caps = ACCESS_LINE_RE
         .captures(line)
         .ok_or_else(|| "Failed to parse access log line".to_string())?;
 
@@ -425,4 +432,48 @@ async fn ensure_logs_index(state: &AppState) -> Result<(), AppError> {
         .map_err(|e| AppError::ElasticSearch(format!("Failed to create logs index: {}", e)))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ACCESS_LINE: &str = r#"1.2.3.4 web-server inst-1 - [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326 "http://www.example.com/start.html" "Mozilla/4.08 [en] (Win98; I ;Nav)" "" 0.012"#;
+
+    #[test]
+    fn parses_access_line() {
+        let doc = parse_access_line(ACCESS_LINE).expect("should parse");
+        let obj = doc.as_object().unwrap();
+        assert_eq!(obj["network"]["client"]["ip"], "1.2.3.4");
+        assert_eq!(obj["http"]["request"]["path"], "/apache_pb.gif");
+        assert_eq!(obj["http"]["response"]["status_code"], 200);
+        assert_eq!(obj["log"]["type"], "access");
+    }
+
+    #[test]
+    fn parses_process_line() {
+        let line = "2024-01-01 10:00:00.123 +0000 svc-1 s1 - [pool-1-thread-1] INFO  logger[method:42] - user login";
+        let doc = parse_process_line(line).expect("should parse");
+        let obj = doc.as_object().unwrap();
+        assert_eq!(obj["app"]["service"], "svc-1");
+        assert_eq!(obj["log"]["level"], "INFO");
+        assert_eq!(obj["log"]["type"], "process");
+    }
+
+    /// 5.8 성능 회귀 가드: access/process 로그 파싱 정규식은 모듈 로드 시
+    /// 1회만 컴파일되어야 한다. 과거에는 `parse_access_line`/`parse_process_line`
+    /// 가 로그 1건마다 `Regex::new`를 호출해 대용량 배치에서 매우 느렸다.
+    #[test]
+    fn perf_ingest_parsing_no_per_line_recompile() {
+        let start = std::time::Instant::now();
+        for _ in 0..10_000 {
+            parse_access_line(ACCESS_LINE).expect("should parse");
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_millis() < 2000,
+            "access parsing too slow ({}ms): regex likely recompiled per line",
+            elapsed.as_millis()
+        );
+    }
 }

@@ -10,7 +10,9 @@ use aads_core::error::AppError;
 use aads_core::state::ElasticSearchClientTrait;
 
 use crate::ml::score_security_stats;
+use crate::ml_supervised::FpFilterModel;
 use crate::stat::SecurityStat;
+use crate::fp_filter::{load_labels, predictions_to_json};
 
 #[derive(Clone)]
 pub struct AgentRunner {
@@ -194,6 +196,10 @@ impl AgentRunner {
         // LLM이 우선 리뷰할 고위험군과 그 근거(피처별 점수)를 함께 제공한다.
         let threat_scores = score_security_stats(&security_stats);
 
+        // 5.5 지도학습 오탐 필터: 분석가가 라벨링한 검출 기록으로 로지스틱 모델을
+        // 학습시켜 각 security_stat의 오탐 확률을 예측해 LLM 컨텍스트에 추가한다.
+        let fp_predictions = self.build_fp_predictions(&security_stats).await;
+
         let context = serde_json::json!({
             "agent": {
                 "name": agent.name,
@@ -205,6 +211,7 @@ impl AgentRunner {
             "recent_detections": recent_detections,
             "security_stats": security_stats,
             "threat_scores": threat_scores,
+            "fp_predictions": fp_predictions,
             "timestamp": Utc::now().to_rfc3339(),
         });
 
@@ -241,6 +248,22 @@ impl AgentRunner {
                 Vec::new()
             }
         }
+    }
+
+    /// 현재 보안 통계 집합에 대한 지도학습 오탐 예측을 생성한다.
+    ///
+    /// `fp_labels` 인덱스의 라벨로 로지스틱 회귀를 학습시키고, 각 security_stat의
+    /// 오탐 확률을 JSON 배열로 반환한다. 학습 데이터가 부족하거나 ES 조회에 실패
+    /// 하면 빈 배열을 반환해 AI 컨텍스트 구성을 방해하지 않는다.
+    async fn build_fp_predictions(&self, stats: &[SecurityStat]) -> serde_json::Value {
+        let labels = load_labels(self.es.as_ref()).await;
+        let mut model = FpFilterModel::default();
+        if labels.len() >= 2 {
+            model.train(&labels, 0.05, 150);
+        }
+
+        let preds: Vec<_> = stats.iter().map(|s| model.predict(s)).collect();
+        predictions_to_json(&preds)
     }
 }
 

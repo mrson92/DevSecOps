@@ -10,11 +10,11 @@ pub struct NativeRuleEvaluator {
 
 #[derive(Debug, Clone)]
 enum CompiledPattern {
-    PathMatches(String),
-    QueryMatches(String),
-    UserAgentMatches(String),
-    ClientIpMatches(String),
-    MethodMatches(String),
+    PathMatches(Regex),
+    QueryMatches(Regex),
+    UserAgentMatches(Regex),
+    ClientIpMatches(Regex),
+    MethodMatches(Regex),
     MethodEq(String),
     SourceEq(String),
     StatusCodeGte(u16),
@@ -228,7 +228,7 @@ fn parse_single_condition(condition: &str) -> Result<Vec<CompiledPattern>, Strin
     // Handle method regex matches: method.matches("...")
     if condition.contains("method.matches(") {
         if let Some(re_str) = extract_regex(condition, "method") {
-            patterns.push(CompiledPattern::MethodMatches(re_str));
+            patterns.push(CompiledPattern::MethodMatches(compile_regex(&re_str)?));
             return Ok(patterns);
         }
     }
@@ -320,7 +320,7 @@ fn parse_single_condition(condition: &str) -> Result<Vec<CompiledPattern>, Strin
     // Handle regex matches on path field
     if condition.contains("path.matches(") {
         if let Some(re_str) = extract_regex(condition, "path") {
-            patterns.push(CompiledPattern::PathMatches(re_str));
+            patterns.push(CompiledPattern::PathMatches(compile_regex(&re_str)?));
             return Ok(patterns);
         }
     }
@@ -328,7 +328,7 @@ fn parse_single_condition(condition: &str) -> Result<Vec<CompiledPattern>, Strin
     // Handle regex matches on query field
     if condition.contains("query.matches(") {
         if let Some(re_str) = extract_regex(condition, "query") {
-            patterns.push(CompiledPattern::QueryMatches(re_str));
+            patterns.push(CompiledPattern::QueryMatches(compile_regex(&re_str)?));
             return Ok(patterns);
         }
     }
@@ -336,7 +336,7 @@ fn parse_single_condition(condition: &str) -> Result<Vec<CompiledPattern>, Strin
     // Handle regex matches on user_agent field
     if condition.contains("user_agent.original.matches(") {
         if let Some(re_str) = extract_regex(condition, "user_agent.original") {
-            patterns.push(CompiledPattern::UserAgentMatches(re_str));
+            patterns.push(CompiledPattern::UserAgentMatches(compile_regex(&re_str)?));
             return Ok(patterns);
         }
     }
@@ -344,7 +344,7 @@ fn parse_single_condition(condition: &str) -> Result<Vec<CompiledPattern>, Strin
     // Handle regex matches on client_ip field
     if condition.contains("client_ip.matches(") {
         if let Some(re_str) = extract_regex(condition, "client_ip") {
-            patterns.push(CompiledPattern::ClientIpMatches(re_str));
+            patterns.push(CompiledPattern::ClientIpMatches(compile_regex(&re_str)?));
             return Ok(patterns);
         }
     }
@@ -454,6 +454,12 @@ fn extract_regex(condition: &str, method_call: &str) -> Option<String> {
     None
 }
 
+/// 정규식 문자열을 컴파일한다. 잘못된 정규식은 평가 시점이 아닌 컴파일 시점에
+/// 오류로 드러나도록 한다 (실패 시 parse 오류 전파).
+fn compile_regex(pattern: &str) -> Result<Regex, String> {
+    Regex::new(pattern).map_err(|e| format!("Invalid regex '{}': {}", pattern, e))
+}
+
 fn extract_string_literal(condition: &str, marker: &str) -> Option<String> {
     if let Some(start) = condition.find(marker) {
         let rest = &condition[start + marker.len()..];
@@ -469,49 +475,15 @@ fn extract_string_literal(condition: &str, marker: &str) -> Option<String> {
 impl CompiledPattern {
     fn matches_log(&self, log: &LogEntry) -> bool {
         match self {
-            CompiledPattern::PathMatches(pattern) => {
-                if let Ok(re) = Regex::new(pattern) {
-                    re.is_match(&log.path)
-                } else {
-                    false
-                }
+            CompiledPattern::PathMatches(re) => re.is_match(&log.path),
+            CompiledPattern::QueryMatches(re) => {
+                log.query.as_ref().map_or(false, |q| re.is_match(q))
             }
-            CompiledPattern::QueryMatches(pattern) => {
-                if let Some(ref query) = log.query {
-                    if let Ok(re) = Regex::new(pattern) {
-                        re.is_match(query)
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
+            CompiledPattern::UserAgentMatches(re) => {
+                log.user_agent.as_ref().map_or(false, |ua| re.is_match(ua))
             }
-            CompiledPattern::UserAgentMatches(pattern) => {
-                if let Some(ref ua) = log.user_agent {
-                    if let Ok(re) = Regex::new(pattern) {
-                        re.is_match(ua)
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-            CompiledPattern::ClientIpMatches(pattern) => {
-                if let Ok(re) = Regex::new(pattern) {
-                    re.is_match(&log.client_ip)
-                } else {
-                    false
-                }
-            }
-            CompiledPattern::MethodMatches(pattern) => {
-                if let Ok(re) = Regex::new(pattern) {
-                    re.is_match(&log.method)
-                } else {
-                    false
-                }
-            }
+            CompiledPattern::ClientIpMatches(re) => re.is_match(&log.client_ip),
+            CompiledPattern::MethodMatches(re) => re.is_match(&log.method),
             CompiledPattern::MethodEq(expected) => {
                 log.method == *expected
             }
@@ -804,5 +776,40 @@ mod tests {
         let logs: Vec<LogEntry> = (0..5).map(|_| make_full("t", "OPTIONS", "s", "/x", "x", 200, "ua")).collect();
         assert!(eval.evaluate(&logs));
         assert_eq!(eval.get_threshold(cond), 5);
+    }
+
+    /// 5.8 성능 회귀 가드: 복잡한 정규식은 컴파일 시점에 한 번만 컴파일되어야 한다.
+    ///
+    /// 과거에는 `matches_log`가 로그 1건마다 `Regex::new`를 호출해 대용량 로그
+    /// 배치에서 극단적으로 느렸다. 이 테스트는 대량(10,000건) 로그에 명령어주입
+    /// 복합 정규식을 평가했을 때 명시한 상한 시간 안에 완료되는지 확인한다.
+    ///
+    /// 상한은 환경(디버그/릴리스, CI 부하)에 따라 넉넉하게 잡아 flaky를 피한다.
+    /// 실제 병목 회귀(로그당 Regex::new)가 재발하면 이 시간을 수십 배 초과한다.
+    #[test]
+    fn perf_regression_regex_not_recompiled_per_log() {
+        let cond = "exists(logs, log -> query.matches(\"(?i)[;|&][[:space:]]*(wget|curl|nc|ncat|netcat|bash|sh|/bin/sh|powershell|cmd|python|perl|ruby|php -r|id|whoami|uname|cat|rm|chmod|chown|mkfifo|base64|apt|yum|scp|socat)\"))";
+        let eval = NativeRuleEvaluator::compile(cond).expect("should compile");
+
+        let logs: Vec<LogEntry> = (0..10_000)
+            .map(|i| {
+                let mut l = make_full("2026-01-01T10:00:00Z", "GET", "s", "/search", "q=hello world", 200, "ua");
+                if i % 500 == 0 {
+                    l.query = Some("file;curl evil.com".to_string());
+                }
+                l
+            })
+            .collect();
+
+        let start = std::time::Instant::now();
+        let matched = eval.count_matched(&logs);
+        let elapsed = start.elapsed();
+
+        assert_eq!(matched, 20, "ratio of injected logs");
+        assert!(
+            elapsed.as_millis() < 1000,
+            "evaluation too slow ({}ms): regex likely recompiled per log",
+            elapsed.as_millis()
+        );
     }
 }

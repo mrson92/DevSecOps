@@ -6,6 +6,7 @@ pub mod detections;
 pub mod engine;
 pub mod ingest;
 pub mod mitre;
+pub mod ml;
 pub mod personas;
 pub mod reports;
 pub mod rules;

@@ -112,6 +112,9 @@ DevSecOPS/
 | POST | `/api/v1/rules/:id/test` | 룰 테스트 |
 | GET | `/api/v1/mitre/tactics` | MITRE ATT&CK 전술 카탈로그 |
 | GET | `/api/v1/mitre/techniques` | MITRE ATT&CK 기법 카탈로그 |
+| GET | `/api/v1/ml/fp-model` | 오탐 필터 지도학습 모델 상태 |
+| GET | `/api/v1/ml/fp-labels` | 라벨링된 오탐/진탐 학습 데이터 |
+| GET | `/api/v1/ml/fp-predict` | 현재 security_stat에 대한 오탐 예측 |
 | GET | `/api/v1/detections` | 탐지 목록 |
 | GET | `/api/v1/detections/:id` | 탐지 상세 |
 | PATCH | `/api/v1/detections/:id` | 탐지 상태 업데이트 |
@@ -215,6 +218,8 @@ DevSecOPS/
 | 5.2 | security_stat 집계·적재 (Rule 검출 → ES) | ✅ 완료 |
 | 5.3 | 1차 무감독 ML 이상탐지·점수화 | ✅ 완료 |
 | 5.4 | 2차 LLM 위협 분석 (TP/FP 판정·심각도·조치) | ✅ 완료 |
+| 5.5 | 지도학습 기반 오탐 필터링 (로지스틱 회귀 + fp 라벨링) | ✅ 완료 |
+| 5.8 | 성능 테스트 및 최적화 | ✅ 완료 |
 
 ### 룰 메타데이터 (Sigma TAG 참고)
 
@@ -254,12 +259,21 @@ Rule 검출 결과를 다단계로 분석해 위협을 판단합니다.
                               │       unique_paths, unique_methods, status_4xx/5xx, error_rate)
                               │      → anomaly_score / threat_level (low~critical)
                               │
-                              └─► ② 2차: LLM 위협 분석 (AgentRunner → persona)
+                              ├─► ② 지도학습 오탐 필터 · 예측
+                              │      (분석가가 라벨링한 검출 → 로지스틱 회귀 학습
+                              │       → 새 security_stat의 오탐 확률 fp_probability)
+                              │
+                              └─► ③ 2차: LLM 위협 분석 (AgentRunner → persona)
                                      → TP/FP 판정 · 심각도 재평가 · MITRE 매핑 · 조치
 ```
 
 - **1차 분석 (ML)**: 라벨 없는 무감독 이상탐지로 평소 패턴과 크게 다른 예외 이벤트를 선별해 LLM 리뷰 우선순위를 정한다.
-- **2차 분석 (LLM)**: 1차 필터링된 `security_stat` + `threat_scores`를 페르소나(`persona-threat-analyst`)에 전달해 진탐/오탐·심각도·조치를 산출한다.
+- **② 지도학습 오탐 필터 (5.5)**: 분석가가 검출을 판정(`PATCH /api/v1/detections/:id`)하면 해당 검출의
+  피처를 `fp_labels` ES 인덱스에 학습 샘플로 축적한다. `false_positive`/`suppressed`→라벨 1(오탐),
+  `resolved`→라벨 0(진탐)으로 두 클래스를 모두 수집한다. 이 라벨로 **순수 Rust 로지스틱 회귀**(SGD)를
+  학습시켜 새 security_stat의 오탐 확률을 예측하고, LLM(AgentRunner) 컨텍스트에 `fp_predictions`로
+  전달한다. 외부 ML 의존성(XGBoost 등) 없이 동작.
+- **3차 분석 (LLM)**: 필터링된 `security_stat` + `threat_scores` + `fp_predictions`를 페르소나(`persona-threat-analyst`)에 전달해 진탐/오탐·심각도·조치를 산출한다.
 
 ### 테스트 결과
 
@@ -276,14 +290,25 @@ Rule 검출 결과를 다단계로 분석해 위협을 판단합니다.
 | `GET /api/v1/rules` | ✅ 10개 룰 조회 |
 | `GET /api/v1/dashboard/stats` | ✅ 통계 조회 |
 
+### 성능 최적화 (5.8)
+
+대용량 로그 처리 병목을 정규식 **1회 컴파일 + 재사용**으로 해소.
+
+- **룰 평가 (`rule_eval`)**: 이전에는 로그 1건을 평가할 때마다 조건의 정규식이
+  `Regex::new()`로 재컴파일되어, 최대 10,000건 배치에서는 같은 정규식을 배치 크기만큼
+  반복 컴파일하는 병목이 있었다. 이제 룰 컴파일 시점에 `Regex`로 1회만 컴파일하고
+  재사용한다. 잘못된 정규식도 평가 시점이 아닌 컴파일 시점에 오류로 잡힌다.
+- **로그 파싱 (`ingest`)**: `parse_access_line`/`parse_process_line`의 파싱 정규식을
+  `std::sync::LazyLock` 정적 값으로 승격해, 로그 1줄마다 재컴파일하던 것을 제거.
+
+회귀 방지를 위해 상한 시간이 걸린 성능 가드 테스트(`perf_regression_*`)를 포함한다.
+
 ### 다음 단계
 
 | 단계 | 내용 | 상태 |
 |------|------|------|
-| 5.5 | 지도학습 기반 오탐 필터링 (XGBoost/fp 학습) | 🔲 예정 |
 | 5.6 | Keycloak OIDC 연동 | 🔲 예정 |
 | 5.7 | 알림 채널 실제 전송 (Slack/이메일) | 🔲 예정 |
-| 5.8 | 성능 테스트 및 최적화 | 🔲 예정 |
 
 ### 브라우저에서 확인
 

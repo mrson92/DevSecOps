@@ -6,8 +6,10 @@ use uuid::Uuid;
 
 use aads_core::state::AppState;
 use aads_core::error::AppError;
-use aads_core::models::UpdateDetectionRequest;
+use aads_core::models::{Detection, UpdateDetectionRequest};
+use aads_engine::types::LogEntry;
 
+use aads_engine::fp_filter::{build_fp_label, collect_label, label_for_status};
 #[derive(Debug, Deserialize, Default)]
 pub struct DetectionFilterParams {
     pub page: Option<u32>,
@@ -128,7 +130,7 @@ pub async fn update_detection(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateDetectionRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let _existing = sqlx::query_as::<_, aads_core::models::Detection>(
+    let _existing: Detection = sqlx::query_as::<_, Detection>(
         "SELECT * FROM rule_executions WHERE id = ?"
     )
     .bind(id.to_string())
@@ -158,15 +160,65 @@ pub async fn update_detection(
     .execute(&state.db)
     .await?;
 
-    let detection = sqlx::query_as::<_, aads_core::models::Detection>(
+    let detection = sqlx::query_as::<_, Detection>(
         "SELECT * FROM rule_executions WHERE id = ?"
     )
     .bind(id.to_string())
     .fetch_one(&state.db)
     .await?;
 
+    // 5.5 지도학습 오탐 필터: 검출 상태가 오탐/진탐으로 최종 판정되면
+    // 해당 검출의 피처를 `fp_labels` 인덱스에 학습 샘플로 수집한다.
+    // - false_positive/suppressed → 라벨 1 (오탐)
+    // - resolved                  → 라벨 0 (진탐)
+    if let Some(label) = req.status.as_deref().and_then(label_for_status) {
+        collect_label_for_detection(&state, &detection, label).await;
+    }
+
     Ok(Json(json!({
         "success": true,
         "data": detection
     })))
+}
+
+/// 검출이 오탐(1)/진탐(0)으로 판정된 경우, 매칭된 로그에서 피처를 추출해
+/// `fp_labels`에 학습 샘플로 적재한다.
+///
+/// `rule_executions.context`는 매칭된 `LogEntry` JSON 배열이므로 이를 파싱해
+/// `build_fp_label`로 집계 피처를 만든다. 라벨 id는 검출 id 기반으로 고정해
+/// 같은 검출을 여러 번 재라벨링해도 중복 적재를 방지한다. (best-effort)
+async fn collect_label_for_detection(state: &AppState, updated: &Detection, label: u8) {
+    let entries: Vec<LogEntry> = updated
+        .context
+        .as_deref()
+        .map(|c| serde_json::from_str::<Vec<LogEntry>>(c).unwrap_or_default())
+        .unwrap_or_default();
+
+    if entries.is_empty() {
+        return;
+    }
+
+    let prefix = if label == 1 { "fp" } else { "tp" };
+    let label_id = format!("{}-{}", prefix, updated.id);
+    let Some(label_doc) = build_fp_label(
+        &label_id,
+        &updated.id,
+        &updated.rule_id,
+        label,
+        &updated.detected_at,
+        &entries,
+    ) else {
+        return;
+    };
+
+    match collect_label(state.es.as_ref(), &label_doc).await {
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(
+                "Failed to collect fp label for detection {}: {}",
+                updated.id,
+                e
+            );
+        }
+    }
 }

@@ -2,6 +2,64 @@
 
 AADS 프로젝트 변경 이력
 
+## [0.5.2] - 2026-09-01
+
+### Changed
+
+#### 백엔드 - 성능 테스트 및 최적화 (5.8)
+- **`engine::rule_eval` 정규식 1회 컴파일**: `CompiledPattern`의 `*Matches` variant가
+  raw `String` 대신 컴파일된 `Regex`를 보유하도록 변경. 과거에는 로그 1건 평가마다
+  `Regex::new()`를 호출해 대용량(최대 10,000건) 배치에서 정규식이 배치 크기만큼
+  재컴파일되는 병목이 있었다.
+  - 이제 룰 컴파일 시점(`NativeRuleEvaluator::compile`)에 1회만 컴파일.
+  - 잘못된 정규식도 평가 시점이 아닌 컴파일 시점에 오류로 감지.
+  - `compile_regex` 헬퍼 추가, 평가 루프에서 재컴파일 제거.
+- **`api::ingest` 파싱 정규식 LazyLock 캐싱**: `parse_access_line`/`parse_process_line`에서
+  로그 1줄마다 `Regex::new()`를 호출하던 것을, 모듈 로드 시 1회 컴파일되는
+  `std::sync::LazyLock` 정적 `Regex`로 대체. 대용량 로그 수집 배치의 처리량을 크게 개선.
+
+### Added
+- **성능 회귀 가드 테스트**:
+  - `rule_eval::perf_regression_regex_not_recompiled_per_log`: 10,000건 로그에 복합
+    정규식 평가가 상한 시간 내 완료되는지 검증 (재컴파일 회귀 시 수십 배 초과).
+  - `ingest::perf_ingest_parsing_no_per_line_recompile`: 10,000줄 access 로그 파싱
+    시간 상한 검증.
+  - `ingest::parses_access_line` / `parses_process_line`: 파싱 정규식 동작 보존 확인.
+
+### 테스트 결과
+- `cargo test --workspace`: ✅ 통과 (40개, 성능 회귀 가드 포함)
+- `cargo build --release --bin aads-backend`: ✅ 통과 (opt-level 3, LTO, codegen-units 1)
+- `cargo clippy --workspace`: 신규 코드 경고 0건 (기존 코드 경고는 유지)
+
+## [0.5.1] - 2026-09-01
+
+### Added
+
+#### 백엔드 - 지도학습 기반 오탐 필터링 (5.5)
+- **`engine::ml_supervised` 모듈**: 순수 Rust **로지스틱 회귀**(확률적 경사하강법) 분류기
+  - `FpFilterModel`: 표준화(mean/std) 기반 학습, `train()`/`predict()` 제공
+  - `FpPrediction`: 오탐 확률(`fp_probability`), 진탐 확률, 오탐 후보 판정(`is_fp_candidate`)
+  - 피처는 `security_stat` 수치 필드(matched_count, unique_ips, unique_paths, unique_methods, status_4xx/5xx, error_rate)와 1:1
+- **`engine::fp_filter` 모듈**: ES 연동 헬퍼
+  - `collect_label`: 오탐/진탐 판정 시 `fp_labels` ES 인덱스에 라벨 적재
+  - `load_labels` / `train_model` / `predict_batch`: 학습·예측 일괄 처리
+  - `build_fp_label`: 검출 `context`(매칭 로그)에서 집계 피처 추출
+- **오탐 라벨 자동 수집**: `PATCH /api/v1/detections/:id`에서 검출 상태가 최종 판정되면 학습 샘플을 축적
+  - `false_positive`/`suppressed` → 라벨 1 (오탐)
+  - `resolved` → 라벨 0 (진탐)
+  - 두 클래스(오탐/진탐)를 모두 수집해 로지스틱 회귀가 클래스 분리를 학습 가능
+- **AgentRunner 통합**: 2차 LLM 위협 분석 컨텍스트에 지도학습 오탐 예측 `fp_predictions` 추가
+  - 라벨로 모델을 학습시켜 각 security_stat의 오탐 확률을 LLM에 제공
+- **API 엔드포인트**:
+  - `GET /api/v1/ml/fp-model` - 모델 상태·라벨 통계 조회
+  - `GET /api/v1/ml/fp-labels` - 라벨링된 학습 데이터 목록
+  - `GET /api/v1/ml/fp-predict` - 현재 security_stat에 대한 오탐 예측
+
+### 테스트 결과
+- `cargo test --workspace`: ✅ 통과 (35개, ml_supervised/fp_filter 단위 테스트 포함)
+- `cargo build --release --bin aads-backend`: ✅ 통과
+- `cargo clippy --workspace`: 신규 파일 경고 0건
+
 ## [0.5.0] - 2026-09-01
 
 ### Added

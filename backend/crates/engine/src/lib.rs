@@ -1,7 +1,9 @@
 pub mod agent_runner;
 pub mod cel;
 pub mod engine;
+pub mod fp_filter;
 pub mod ml;
+pub mod ml_supervised;
 pub mod report;
 pub mod rule_eval;
 pub mod scheduler;
@@ -10,7 +12,9 @@ pub mod types;
 
 pub use agent_runner::AgentRunner;
 pub use engine::RuleEngine;
+pub use fp_filter::{FP_LABELS_INDEX, collect_label, load_labels, predict_batch, train_model, build_fp_label, label_for_status};
 pub use ml::{ThreatScore, score_security_stats, to_threat_score};
+pub use ml_supervised::{FpFilterModel, FpLabel, FpPrediction};
 pub use report::ReportGenerator;
 pub use scheduler::{Scheduler, NotificationDispatcher};
 pub use stat::{SecurityStat, build_security_stat, build_security_stats, security_stat_mapping};
