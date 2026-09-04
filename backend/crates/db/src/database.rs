@@ -61,5 +61,11 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // ClickHouse datasource support: recreate data_sources table with updated CHECK.
+    // INSERT OR IGNORE ensures idempotency; DROP/RENAME is safe on SQLite.
+    sqlx::query(include_str!("../../../migrations/010_add_clickhouse_datasource.sql"))
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }

@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use aads_core::state::AppState;
@@ -34,6 +34,11 @@ fn validate_datasource_config(ds_type: &str, config: &str) -> Result<Value, AppE
                         "PostgreSQL requires '{}' field", field
                     )));
                 }
+            }
+        }
+        "clickhouse" => {
+            if parsed.get("url").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                return Err(AppError::Validation("ClickHouse requires 'url' field".into()));
             }
         }
         _ => {
@@ -118,6 +123,46 @@ async fn test_postgresql_connection(config: &Value) -> Result<String, AppError> 
 
     pool.close().await;
     Ok(format!("Connected (host:{}, db:{})", host, database))
+}
+
+async fn test_clickhouse_connection(config: &Value) -> Result<String, AppError> {
+    let url = config["url"].as_str().unwrap_or("http://localhost:8123");
+    let database = config["database"].as_str().unwrap_or("default");
+    let user = config["user"].as_str().unwrap_or("default");
+    let password = config["password"].as_str().unwrap_or("");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+
+    let base = url.trim_end_matches('/');
+    let ping_url = format!("{}/ping", base);
+    let resp = client.get(&ping_url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("ClickHouse connection failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(AppError::Internal(format!(
+            "ClickHouse ping returned status: {}", resp.status()
+        )));
+    }
+
+    // Verify we can query the server version
+    let query_url = format!("{}/?query=SELECT+version()&user={}&password={}&database={}",
+        base, user, password, database);
+    let version_resp = client.get(&query_url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("ClickHouse version query failed: {}", e)))?;
+
+    if version_resp.status().is_success() {
+        let version = version_resp.text().await.unwrap_or_default();
+        Ok(format!("Connected (version: {}, db: {})", version.trim(), database))
+    } else {
+        Ok(format!("Connected (ping OK, db: {})", database))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -293,6 +338,167 @@ pub async fn update_data_source(
     Ok(Json(json!({ "success": true, "data": source })))
 }
 
+// ============================================================
+// Elasticsearch Field Mapping
+// ============================================================
+
+/// Get the index mapping from an external Elasticsearch cluster.
+/// The `url` here is the data source's own ES url (may differ from the system's ES),
+/// so we connect directly via reqwest.
+async fn fetch_es_mapping(url: &str, index: &str) -> Result<Value, AppError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+
+    let base = url.trim_end_matches('/');
+    let mapping_url = format!("{}/{}/_mapping", base, index);
+    let resp = client
+        .get(&mapping_url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch ES mapping: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(AppError::Internal(format!(
+            "ES returned status {} while fetching mapping for index '{}'",
+            resp.status(),
+            index
+        )));
+    }
+
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to parse ES mapping response: {}", e)))?;
+
+    Ok(body)
+}
+
+/// Extract the flattened list of fields (leaf paths) from an ES mapping body
+/// `{ "<index>": { "mappings": { "properties": { ... } } } }`,
+/// returning a map of field path -> type (and sub-mappings).
+fn extract_mapping_fields(mapping_body: &Value) -> Value {
+    let mut result = Map::new();
+
+    let Some(obj) = mapping_body.as_object() else {
+        return Value::Object(result);
+    };
+
+    let empty_props = Map::new();
+
+    // The keys are index names -> { mappings: { properties: {...} } }
+    for (_index_name, index_body) in obj {
+        let properties = index_body
+            .get("mappings")
+            .and_then(|m| m.get("properties"))
+            .and_then(|p| p.as_object())
+            .unwrap_or(&empty_props);
+
+        flatten_properties(properties, "", &mut result);
+    }
+
+    Value::Object(result)
+}
+
+fn flatten_properties(properties: &Map<String, Value>, prefix: &str, out: &mut Map<String, Value>) {
+    for (key, value) in properties {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{}.{}", prefix, key)
+        };
+
+        if let Some(props) = value.get("properties").and_then(|p| p.as_object()) {
+            // Nested object -> recurse, but also record a marker for the group? No,
+            // record leaf paths only.
+            flatten_properties(props, &path, out);
+        } else {
+            // Leaf field
+            let field_type = value.get("type").and_then(|t| t.as_str()).unwrap_or("object");
+            out.insert(path, json!(field_type));
+        }
+    }
+}
+
+/// Compute a field-mapping config that maps the system's canonical fields
+/// to the actual external ES field paths. `mapping_body` comes from an external
+/// ES cluster.
+///
+/// The result shape is a JSON object:
+/// ```
+/// {
+///   "<external field path>": {
+///     "es_field": "<path>",
+///     "es_type": "<type>"
+///   },
+///   ...
+/// }
+/// ```
+/// User-defined custom mapping entries (`existing`) are overlaid on top so any
+/// manual edits are preserved.
+pub fn build_field_mapping_config(mapping_body: &Value, existing: &Value) -> Value {
+    let fields = extract_mapping_fields(mapping_body);
+
+    let mut result = Map::new();
+    if let Some(fields_obj) = fields.as_object() {
+        for (path, field_type) in fields_obj {
+            result.insert(
+                path.clone(),
+                json!({
+                    "es_field": path,
+                    "es_type": field_type,
+                }),
+            );
+        }
+    }
+
+    if let Some(existing_obj) = existing.as_object() {
+        for (key, val) in existing_obj {
+            result.insert(key.clone(), val.clone());
+        }
+    }
+
+    Value::Object(result)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApplyEsMappingRequest {
+    pub url: String,
+    pub index: String,
+    /// Optional, pre-existing user-defined field-mapping to preserve on re-fetch.
+    pub current_mapping: Option<Value>,
+}
+
+/// POST /data-sources/apply-es-mapping
+/// Body: { "url": "...", "index": "...", "current_mapping": {...}? }
+/// Fetch an index's mapping from an external ES, then return a suggested
+/// field-mapping config (system canonical field -> external es field/type).
+pub async fn apply_es_mapping(
+    State(_state): State<AppState>,
+    Json(req): Json<ApplyEsMappingRequest>,
+) -> Result<Json<Value>, AppError> {
+    if req.url.trim().is_empty() || req.index.trim().is_empty() {
+        return Err(AppError::Validation(
+            "url and index are required".into(),
+        ));
+    }
+
+    let mapping_body = fetch_es_mapping(&req.url, &req.index).await?;
+
+    let existing = req.current_mapping.as_ref().unwrap_or(&Value::Null);
+    let mapping = build_field_mapping_config(&mapping_body, existing);
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "index": req.index,
+            "field_mapping": mapping,
+            "fields": extract_mapping_fields(&mapping_body)
+        }
+    })))
+}
+
 pub async fn test_data_source(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -317,6 +523,9 @@ pub async fn test_data_source(
         }
         "postgresql" => {
             test_postgresql_connection(&config).await
+        }
+        "clickhouse" => {
+            test_clickhouse_connection(&config).await
         }
         _ => Err(AppError::Validation(format!(
             "Unsupported datasource type: {}", source.r#type

@@ -95,7 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_type_period ON reports(type, period_start
 CREATE TABLE IF NOT EXISTS data_sources (
     id              TEXT PRIMARY KEY,
     name            VARCHAR(100) NOT NULL UNIQUE,
-    type            VARCHAR(20) NOT NULL CHECK (type IN ('elasticsearch','loki','postgresql')),
+    type            VARCHAR(20) NOT NULL CHECK (type IN ('elasticsearch','loki','postgresql','clickhouse')),
     config          TEXT NOT NULL,
     target          VARCHAR(200) NOT NULL,
     field_mapping   TEXT NOT NULL DEFAULT '{}',
