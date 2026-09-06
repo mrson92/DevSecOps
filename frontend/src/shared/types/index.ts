@@ -101,6 +101,89 @@ export interface DataSource {
   updated_at: string
 }
 
+export interface LogEntry {
+  timestamp: string
+  source: string
+  client_ip: string
+  method: string
+  path: string
+  query: string | null
+  status_code: number
+  response_size: number
+  user_agent: string | null
+  user_id: string | null
+  response_time: number | null
+  extra: Record<string, unknown> | null
+}
+
+export interface LogSearchMeta {
+  datasource_id: string
+  datasource_name: string
+  datasource_type: string
+  count: number
+  total: number
+  has_more: boolean
+  limit: number
+  offset: number
+  from?: string
+  to?: string
+}
+
+export interface LogSearchResponse {
+  success: boolean
+  data: LogEntry[]
+  meta?: LogSearchMeta
+}
+
+export interface LogHistogramBucket {
+  ts: number
+  count: number
+}
+
+export interface DatasourceField {
+  name: string
+  type: string
+  standard?: string | null
+}
+
+export interface DatasourceFieldResponse {
+  success: boolean
+  data: DatasourceField[]
+  meta?: {
+    datasource_id: string
+    datasource_name: string
+    datasource_type: string
+  }
+}
+
+export interface FieldValue {
+  value: string
+  count: number
+}
+
+export interface FieldValuesResponse {
+  success: boolean
+  data: FieldValue[]
+  meta?: {
+    datasource_id: string
+    datasource_name: string
+    datasource_type: string
+    field: string
+    size: number
+  }
+}
+
+export interface LogHistogramResponse {
+  success: boolean
+  data: LogHistogramBucket[]
+  meta?: {
+    datasource_id: string
+    datasource_name: string
+    datasource_type: string
+    interval: number
+  }
+}
+
 export interface NotificationChannel {
   id: string
   name: string

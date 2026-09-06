@@ -13,6 +13,8 @@ pub trait ElasticSearchClientTrait: Send + Sync {
     async fn health_check(&self) -> Result<bool, AppError>;
     async fn create_index(&self, index: &str, mapping: Value) -> Result<bool, AppError>;
     async fn index_exists(&self, index: &str) -> Result<bool, AppError>;
+    async fn get_index_mapping(&self, index: &str) -> Result<Value, AppError>;
+    async fn list_indices(&self, pattern: &str) -> Result<Vec<String>, AppError>;
 }
 
 pub struct AppState {

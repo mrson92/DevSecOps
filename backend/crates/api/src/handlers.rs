@@ -5,6 +5,7 @@ pub mod dashboard;
 pub mod detections;
 pub mod engine;
 pub mod ingest;
+pub mod logs;
 pub mod mitre;
 pub mod ml;
 pub mod personas;

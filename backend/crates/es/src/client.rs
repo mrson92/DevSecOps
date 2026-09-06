@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use elasticsearch::{
     http::transport::Transport,
     cluster::ClusterHealthParts,
-    indices::{IndicesCreateParts, IndicesExistsParts},
+    indices::{IndicesCreateParts, IndicesExistsParts, IndicesGetMappingParts},
+    cat::CatIndicesParts,
     BulkParts,
     Elasticsearch,
     IndexParts,
@@ -137,5 +138,52 @@ impl ElasticSearchClientTrait for ElasticSearchClient {
             .map_err(|e| AppError::ElasticSearch(format!("Index exists error: {}", e)))?;
 
         Ok(response.status_code().is_success())
+    }
+
+    async fn get_index_mapping(&self, index: &str) -> Result<Value, AppError> {
+        let full_index = self.full_index_name(index);
+
+        let response = self
+            .client
+            .indices()
+            .get_mapping(IndicesGetMappingParts::Index(&[&full_index]))
+            .send()
+            .await
+            .map_err(|e| AppError::ElasticSearch(format!("Get mapping error: {}", e)))?;
+
+        let body = response
+            .json::<Value>()
+            .await
+            .map_err(|e| AppError::ElasticSearch(format!("Response parse error: {}", e)))?;
+
+        Ok(body)
+    }
+
+    async fn list_indices(&self, pattern: &str) -> Result<Vec<String>, AppError> {
+        let response = self
+            .client
+            .cat()
+            .indices(CatIndicesParts::Index(&[pattern]))
+            .format("json")
+            .h(&["index"])
+            .send()
+            .await
+            .map_err(|e| AppError::ElasticSearch(format!("List indices error: {}", e)))?;
+
+        let body = response
+            .json::<Value>()
+            .await
+            .map_err(|e| AppError::ElasticSearch(format!("Response parse error: {}", e)))?;
+
+        let mut indices = Vec::new();
+        if let Some(array) = body.as_array() {
+            for item in array {
+                if let Some(name) = item["index"].as_str() {
+                    indices.push(name.to_string());
+                }
+            }
+        }
+        indices.sort();
+        Ok(indices)
     }
 }

@@ -26,11 +26,21 @@ interface PostgresConfig {
   ssl_mode: string
 }
 
+interface ClickHouseConfig {
+  url: string
+  database: string
+  user: string
+  password: string
+}
+
 const DEFAULT_ES_CONFIG: EsConfig = { url: 'http://localhost:9200', username: '', password: '', index_prefix: 'aads' }
 const DEFAULT_LOKI_CONFIG: LokiConfig = { url: 'http://localhost:3100', tenant_id: '' }
 const DEFAULT_PG_CONFIG: PostgresConfig = { host: 'localhost', port: '5432', database: 'postgres', user: 'postgres', password: '', ssl_mode: 'prefer' }
+const DEFAULT_CH_CONFIG: ClickHouseConfig = { url: 'http://localhost:8123', database: 'default', user: 'default', password: '' }
 
-function buildConfig(_type: string, fields: EsConfig | LokiConfig | PostgresConfig): string {
+type SourceConfig = EsConfig | LokiConfig | PostgresConfig | ClickHouseConfig
+
+function buildConfig(_type: string, fields: SourceConfig): string {
   const cleaned: Record<string, string> = {}
   for (const [k, v] of Object.entries(fields)) {
     if (v !== '') cleaned[k] = v
@@ -38,7 +48,7 @@ function buildConfig(_type: string, fields: EsConfig | LokiConfig | PostgresConf
   return JSON.stringify(cleaned)
 }
 
-function parseConfig(type: string, configStr: string): EsConfig | LokiConfig | PostgresConfig {
+function parseConfig(type: string, configStr: string): SourceConfig {
   try {
     const parsed = JSON.parse(configStr)
     if (type === 'elasticsearch') {
@@ -50,9 +60,13 @@ function parseConfig(type: string, configStr: string): EsConfig | LokiConfig | P
     if (type === 'postgresql') {
       return { host: parsed.host || '', port: String(parsed.port || '5432'), database: parsed.database || '', user: parsed.user || '', password: parsed.password || '', ssl_mode: parsed.ssl_mode || 'prefer' }
     }
+    if (type === 'clickhouse') {
+      return { url: parsed.url || '', database: parsed.database || 'default', user: parsed.user || 'default', password: parsed.password || '' }
+    }
   } catch { /* ignore */ }
   if (type === 'elasticsearch') return { ...DEFAULT_ES_CONFIG }
   if (type === 'loki') return { ...DEFAULT_LOKI_CONFIG }
+  if (type === 'clickhouse') return { ...DEFAULT_CH_CONFIG }
   return { ...DEFAULT_PG_CONFIG }
 }
 
@@ -155,20 +169,143 @@ function PostgresFields({ config, onChange }: { config: PostgresConfig; onChange
   )
 }
 
+function ClickHouseFields({ config, onChange }: { config: ClickHouseConfig; onChange: (c: ClickHouseConfig) => void }) {
+  return (
+    <>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">URL *</label>
+        <input type="text" placeholder="http://localhost:8123" value={config.url}
+          onChange={(e) => onChange({ ...config, url: e.target.value })}
+          className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm" />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Database</label>
+        <input type="text" placeholder="default" value={config.database}
+          onChange={(e) => onChange({ ...config, database: e.target.value })}
+          className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm" />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">User</label>
+        <input type="text" placeholder="default" value={config.user}
+          onChange={(e) => onChange({ ...config, user: e.target.value })}
+          className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm" />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Password</label>
+        <input type="password" placeholder="••••••••" value={config.password}
+          onChange={(e) => onChange({ ...config, password: e.target.value })}
+          className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm" />
+      </div>
+    </>
+  )
+}
+
 interface SourceFormProps {
   initialName?: string
   initialType?: string
   initialConfig?: string
   initialTarget?: string
+  initialFieldMapping?: string
   initialEnabled?: boolean
   initialPrimary?: boolean
   submitLabel: string
-  onSubmit: (data: { name: string; type: string; config: string; target: string; enabled: boolean; is_primary: boolean }) => void
+  onSubmit: (data: { name: string; type: string; config: string; target: string; field_mapping?: string; enabled: boolean; is_primary: boolean }) => void
   onCancel: () => void
   isPending?: boolean
 }
 
-function SourceForm({ initialName = '', initialType = 'elasticsearch', initialConfig = '', initialTarget = '', initialEnabled = true, initialPrimary = false, submitLabel, onSubmit, onCancel, isPending }: SourceFormProps) {
+interface FieldMappingEntry {
+  es_field: string
+  es_type?: string
+}
+
+function FieldMappingEditor({
+  value,
+  onChange,
+  onFetch,
+  fetchPending,
+  fetchError,
+  showFetch = false,
+}: {
+  value: Record<string, FieldMappingEntry>
+  onChange: (v: Record<string, FieldMappingEntry>) => void
+  onFetch: () => void
+  fetchPending: boolean
+  fetchError: string | null
+  showFetch?: boolean
+}) {
+  const entries = Object.entries(value)
+
+  const updateEntry = (key: string, entry: FieldMappingEntry) => {
+    onChange({ ...value, [key]: entry })
+  }
+
+  const removeEntry = (key: string) => {
+    const next = { ...value }
+    delete next[key]
+    onChange(next)
+  }
+
+  const addEntry = () => {
+    onChange({ ...value, ['new_field']: { es_field: '', es_type: 'keyword' } })
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium">Field Mapping</label>
+        {showFetch && (
+          <Button type="button" size="sm" variant="outline" onClick={onFetch} disabled={fetchPending}>
+            {fetchPending ? 'Fetching...' : '기존 매핑 가져오기'}
+          </Button>
+        )}
+      </div>
+      {fetchError && <p className="text-xs text-destructive">{fetchError}</p>}
+
+      {entries.length === 0 ? (
+        <p className="text-xs text-muted-foreground">매핑된 필드가 없습니다. &quot;기존 매핑 가져오기&quot;를 통해 외부 인덱스의 필드를 가져오거나 직접 추가하세요.</p>
+      ) : (
+        <div className="space-y-2">
+          {entries.map(([key, entry]) => (
+            <div key={key} className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="system_field"
+                value={key}
+                onChange={(e) => {
+                  const next = { ...value }
+                  delete next[key]
+                  next[e.target.value] = entry
+                  onChange(next)
+                }}
+                className="flex-1 px-2 py-1.5 rounded-md border border-border bg-background text-xs"
+              />
+              <span className="text-muted-foreground text-xs">→</span>
+              <input
+                type="text"
+                placeholder="es field path e.g. message.raw"
+                value={entry.es_field}
+                onChange={(e) => updateEntry(key, { ...entry, es_field: e.target.value })}
+                className="flex-[2] px-2 py-1.5 rounded-md border border-border bg-background text-xs"
+              />
+              <input
+                type="text"
+                placeholder="type"
+                value={entry.es_type || ''}
+                onChange={(e) => updateEntry(key, { ...entry, es_type: e.target.value })}
+                className="w-24 px-2 py-1.5 rounded-md border border-border bg-background text-xs"
+              />
+              <Button type="button" size="sm" variant="ghost" onClick={() => removeEntry(key)}>✕</Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Button type="button" size="sm" variant="outline" onClick={addEntry}>+ 필드 추가</Button>
+    </div>
+  )
+}
+
+function SourceForm({ initialName = '', initialType = 'elasticsearch', initialConfig = '', initialTarget = '', initialFieldMapping = '', initialEnabled = true, initialPrimary = false, submitLabel, onSubmit, onCancel, isPending }: SourceFormProps) {
   const [name, setName] = useState(initialName)
   const [type, setType] = useState(initialType)
   const [target, setTarget] = useState(initialTarget)
@@ -177,11 +314,24 @@ function SourceForm({ initialName = '', initialType = 'elasticsearch', initialCo
   const [esConfig, setEsConfig] = useState<EsConfig>(() => parseConfig('elasticsearch', initialConfig) as EsConfig)
   const [lokiConfig, setLokiConfig] = useState<LokiConfig>(() => parseConfig('loki', initialConfig) as LokiConfig)
   const [pgConfig, setPgConfig] = useState<PostgresConfig>(() => parseConfig('postgresql', initialConfig) as PostgresConfig)
+  const [chConfig, setChConfig] = useState<ClickHouseConfig>(() => parseConfig('clickhouse', initialConfig) as ClickHouseConfig)
+
+  const [fieldMapping, setFieldMapping] = useState<Record<string, FieldMappingEntry>>(
+    () => {
+      try {
+        const parsed = JSON.parse(initialFieldMapping || '{}')
+        return typeof parsed === 'object' && parsed !== null ? parsed : {}
+      } catch { return {} }
+    }
+  )
+  const [fetchPending, setFetchPending] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!initialConfig) {
       if (type === 'elasticsearch') setEsConfig({ ...DEFAULT_ES_CONFIG })
       else if (type === 'loki') setLokiConfig({ ...DEFAULT_LOKI_CONFIG })
+      else if (type === 'clickhouse') setChConfig({ ...DEFAULT_CH_CONFIG })
       else setPgConfig({ ...DEFAULT_PG_CONFIG })
     }
   }, [type])
@@ -190,21 +340,44 @@ function SourceForm({ initialName = '', initialType = 'elasticsearch', initialCo
     setType(newType)
     if (newType === 'elasticsearch') setEsConfig(parseConfig('elasticsearch', initialConfig) as EsConfig)
     else if (newType === 'loki') setLokiConfig(parseConfig('loki', initialConfig) as LokiConfig)
+    else if (newType === 'clickhouse') setChConfig(parseConfig('clickhouse', initialConfig) as ClickHouseConfig)
     else setPgConfig(parseConfig('postgresql', initialConfig) as PostgresConfig)
+  }
+
+  const handleFetchMapping = async () => {
+    if (type !== 'elasticsearch') return
+    setFetchPending(true)
+    setFetchError(null)
+    try {
+      const res = await api.post('/data-sources/apply-es-mapping', {
+        url: esConfig.url,
+        index: target || 'logs-*',
+        current_mapping: fieldMapping,
+      })
+      const entries: Record<string, FieldMappingEntry> = res.data?.data?.field_mapping ?? {}
+      setFieldMapping(entries)
+    } catch (e: any) {
+      setFetchError(e?.response?.data?.error?.message || e?.message || '매핑을 가져오지 못했습니다.')
+    } finally {
+      setFetchPending(false)
+    }
   }
 
   const handleSubmit = () => {
     let config: string
     if (type === 'elasticsearch') config = buildConfig(type, esConfig)
     else if (type === 'loki') config = buildConfig(type, lokiConfig)
+    else if (type === 'clickhouse') config = buildConfig(type, chConfig)
     else config = buildConfig(type, pgConfig)
-    onSubmit({ name, type, config, target, enabled, is_primary: isPrimary })
+    onSubmit({ name, type, config, target, enabled, is_primary: isPrimary, field_mapping: JSON.stringify(fieldMapping) })
   }
 
   const configFields = type === 'elasticsearch'
     ? <EsFields config={esConfig} onChange={setEsConfig} />
     : type === 'loki'
     ? <LokiFields config={lokiConfig} onChange={setLokiConfig} />
+    : type === 'clickhouse'
+    ? <ClickHouseFields config={chConfig} onChange={setChConfig} />
     : <PostgresFields config={pgConfig} onChange={setPgConfig} />
 
   return (
@@ -223,6 +396,7 @@ function SourceForm({ initialName = '', initialType = 'elasticsearch', initialCo
             <option value="elasticsearch">ElasticSearch</option>
             <option value="loki">Loki</option>
             <option value="postgresql">PostgreSQL</option>
+            <option value="clickhouse">ClickHouse</option>
           </select>
         </div>
       </div>
@@ -232,7 +406,7 @@ function SourceForm({ initialName = '', initialType = 'elasticsearch', initialCo
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <label className="text-sm font-medium">Target</label>
-          <input type="text" placeholder="logs-*" value={target}
+          <input type="text" placeholder={type === 'clickhouse' ? 'logs' : 'logs-*'} value={target}
             onChange={(e) => setTarget(e.target.value)}
             className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm" />
         </div>
@@ -247,6 +421,16 @@ function SourceForm({ initialName = '', initialType = 'elasticsearch', initialCo
           </label>
         </div>
       </div>
+      {(type === 'elasticsearch' || type === 'clickhouse') && (
+        <FieldMappingEditor
+          value={fieldMapping}
+          onChange={setFieldMapping}
+          onFetch={handleFetchMapping}
+          fetchPending={fetchPending}
+          fetchError={fetchError}
+          showFetch={type === 'elasticsearch'}
+        />
+      )}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!name || isPending}>
           {isPending ? 'Saving...' : submitLabel}
@@ -382,6 +566,7 @@ export function SettingsPage() {
               initialType={editingSource.type}
               initialConfig={editingSource.config}
               initialTarget={editingSource.target}
+              initialFieldMapping={editingSource.field_mapping}
               initialEnabled={editingSource.enabled}
               initialPrimary={editingSource.is_primary}
               submitLabel="Update"

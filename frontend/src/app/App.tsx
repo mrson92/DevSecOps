@@ -5,6 +5,7 @@ import { RulesPage } from '@/features/rules/pages/RulesPage'
 import { RuleDetailPage } from '@/features/rules/pages/RuleDetailPage'
 import { DetectionsPage } from '@/features/detections/pages/DetectionsPage'
 import { DetectionDetailPage } from '@/features/detections/pages/DetectionDetailPage'
+import { LogsPage } from '@/features/logs/pages/LogsPage'
 import { AgentsPage } from '@/features/agents/pages/AgentsPage'
 import { ChatPage } from '@/features/chat/pages/ChatPage'
 import { ReportsPage } from '@/features/reports/pages/ReportsPage'
@@ -19,6 +20,7 @@ export function App() {
         <Route path="/rules/:id" element={<RuleDetailPage />} />
         <Route path="/detections" element={<DetectionsPage />} />
         <Route path="/detections/:id" element={<DetectionDetailPage />} />
+        <Route path="/logs" element={<LogsPage />} />
         <Route path="/agents" element={<AgentsPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/reports" element={<ReportsPage />} />
