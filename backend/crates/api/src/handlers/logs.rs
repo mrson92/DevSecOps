@@ -21,10 +21,30 @@ pub struct ListLogsParams {
     pub status_code: Option<i64>,
     pub user_id: Option<String>,
     pub user_agent: Option<String>,
+    pub exclude_path: Option<String>,
+    pub exclude_client_ip: Option<String>,
+    pub exclude_method: Option<String>,
+    pub exclude_source: Option<String>,
+    pub exclude_status_code: Option<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub order: Option<String>,
     pub interval: Option<u64>,
+}
+
+fn collect_excludes(p: &ListLogsParams) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut push = |key: &'static str, v: &Option<String>| {
+        if let Some(s) = v.as_deref().filter(|s| !s.is_empty()) {
+            out.push((key.to_string(), s.to_string()));
+        }
+    };
+    push("path", &p.exclude_path);
+    push("client_ip", &p.exclude_client_ip);
+    push("method", &p.exclude_method);
+    push("source", &p.exclude_source);
+    push("status_code", &p.exclude_status_code);
+    out
 }
 
 fn build_filter(p: &ListLogsParams, default_span_hours: i64) -> Result<LogFilter, AppError> {
@@ -48,6 +68,7 @@ fn build_filter(p: &ListLogsParams, default_span_hours: i64) -> Result<LogFilter
         status_code: p.status_code.map(|v| v as u16),
         user_id: p.user_id.clone().filter(|s| !s.is_empty()),
         user_agent: p.user_agent.clone().filter(|s| !s.is_empty()),
+        excludes: collect_excludes(p),
         limit: p.limit.unwrap_or(100).clamp(1, 1000),
         offset: p.offset.unwrap_or(0),
         order: p.order.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "desc".to_string()),

@@ -112,6 +112,9 @@ pub struct LogFilter {
     pub status_code: Option<u16>,
     pub user_id: Option<String>,
     pub user_agent: Option<String>,
+    /// Excluded (NOT) filters, keyed by canonical field name.
+    /// Supported keys: path, client_ip, method, source, status_code.
+    pub excludes: Vec<(String, String)>,
     pub limit: usize,
     pub offset: usize,
     pub order: String,
@@ -198,6 +201,21 @@ fn clickhouse_conditions(field_mapping: &FieldMapping, filter: &LogFilter) -> Ve
         .collect();
         conds.push(format!("({})", patterns.join(" OR ")));
     }
+
+    // Excludes (NOT filters) — keyed by canonical field name.
+    for (key, value) in &filter.excludes {
+        let (standard, matcher) = match key.as_str() {
+            "path" => ("http.request.path", format!("{} NOT ILIKE '%{}%'", col("http.request.path", "path"), esc_like(value))),
+            "client_ip" => ("network.client.ip", format!("{} NOT ILIKE '%{}%'", col("network.client.ip", "client_ip"), esc_like(value))),
+            "method" => ("http.request.method", format!("{} != '{}'", col("http.request.method", "method"), esc(value))),
+            "source" => ("source", format!("{} != '{}'", col("source", "source"), esc(value))),
+            "status_code" => ("http.response.status_code", format!("{} != {}", col("http.response.status_code", "status_code"), value)),
+            _ => continue,
+        };
+        let _ = standard;
+        conds.push(matcher);
+    }
+
     conds
 }
 
@@ -1335,8 +1353,45 @@ async fn search_logs_from_clickhouse(
             )]));
         }
 
+        // Excludes (NOT filters) — emitted as `must_not` clauses.
+        let mut must_not: Vec<Value> = Vec::new();
+        for (key, value) in &filter.excludes {
+            match key.as_str() {
+                "path" => {
+                    let f = mapped_col(field_mapping, "http.request.path", "http.request.path").to_string();
+                    let wildcard = format!("*{}*", value.replace('*', "").replace('?', ""));
+                    must_not.push(es_obj(vec![(
+                        "wildcard",
+                        es_obj(vec![(f.as_str(), es_obj(vec![("value", json!(wildcard)), ("case_insensitive", json!(true))]))]),
+                    )]));
+                }
+                "client_ip" => {
+                    let f = mapped_col(field_mapping, "network.client.ip", "network.client.ip").to_string();
+                    must_not.push(es_obj(vec![("term", es_obj(vec![(f.as_str(), json!(value))]))]));
+                }
+                "method" => {
+                    let f = mapped_col(field_mapping, "http.request.method", "http.request.method").to_string();
+                    must_not.push(es_obj(vec![("term", es_obj(vec![(f.as_str(), json!(value))]))]));
+                }
+                "source" => {
+                    let f = mapped_col(field_mapping, "source", "source").to_string();
+                    must_not.push(es_obj(vec![("term", es_obj(vec![(f.as_str(), json!(value))]))]));
+                }
+                "status_code" => {
+                    let f = mapped_col(field_mapping, "http.response.status_code", "http.response.status_code").to_string();
+                    if let Ok(code) = value.parse::<u64>() {
+                        must_not.push(es_obj(vec![("term", es_obj(vec![(f.as_str(), json!(code))]))]));
+                    }
+                }
+                _ => {}
+            }
+        }
+
         let mut bool_map = serde_json::Map::new();
         bool_map.insert("filter".to_string(), Value::Array(filters));
+        if !must_not.is_empty() {
+            bool_map.insert("must_not".to_string(), Value::Array(must_not));
+        }
         bool_map
     }
 
