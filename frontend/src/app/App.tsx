@@ -9,6 +9,7 @@ import { LogsPage } from '@/features/logs/pages/LogsPage'
 import { AgentsPage } from '@/features/agents/pages/AgentsPage'
 import { ChatPage } from '@/features/chat/pages/ChatPage'
 import { ReportsPage } from '@/features/reports/pages/ReportsPage'
+import { ReportDetailPage } from '@/features/reports/pages/ReportDetailPage'
 import { SettingsPage } from '@/features/settings/pages/SettingsPage'
 
 export function App() {
@@ -24,6 +25,7 @@ export function App() {
         <Route path="/agents" element={<AgentsPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/reports/:id" element={<ReportDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </Layout>

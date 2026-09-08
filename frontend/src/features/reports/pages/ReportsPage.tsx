@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import api from '@/shared/lib/api'
 import type { Report, ApiResponse } from '@/shared/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 
 type ReportCategory = 'all' | 'daily' | 'weekly' | 'monthly'
 
-const CATEGORY_LABELS: Record<ReportCategory, string> = {
+const CATEGORY_LABELS: Record<string, string> = {
   all: 'All',
   daily: 'Daily',
   weekly: 'Weekly',
@@ -16,7 +17,22 @@ const CATEGORY_LABELS: Record<ReportCategory, string> = {
 
 const CATEGORY_ORDER: ReportCategory[] = ['all', 'daily', 'weekly', 'monthly']
 
+const STATUS_STYLES: Record<string, string> = {
+  completed: 'bg-green-100 text-green-800',
+  generating: 'bg-yellow-100 text-yellow-800',
+  failed: 'bg-red-100 text-red-800',
+}
+
+type BoardColumn = 'daily' | 'weekly' | 'monthly'
+
+const BOARD_COLUMNS: { id: BoardColumn; label: string; hint: string }[] = [
+  { id: 'daily', label: 'Daily', hint: '일별 요약 리포트' },
+  { id: 'weekly', label: 'Weekly', hint: '주간 요약 리포트' },
+  { id: 'monthly', label: 'Monthly', hint: '월간 종합 리포트' },
+]
+
 export function ReportsPage() {
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [category, setCategory] = useState<ReportCategory>('all')
   const [dateInputs, setDateInputs] = useState<Record<string, string>>({})
@@ -25,7 +41,7 @@ export function ReportsPage() {
   const { data: reportsData, isLoading } = useQuery<ApiResponse<Report[]>>({
     queryKey: ['reports', category, page],
     queryFn: () => {
-      const params = new URLSearchParams({ page: String(page), size: '20' })
+      const params = new URLSearchParams({ page: String(page), size: '100' })
       if (category !== 'all') params.set('report_type', category)
       return api.get(`/reports?${params.toString()}`).then((res) => res.data)
     },
@@ -42,21 +58,19 @@ export function ReportsPage() {
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/reports/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reports'] })
-    },
-  })
-
   const reports = reportsData?.data ?? []
   const meta = reportsData?.meta
-  const totalPages = meta ? Math.ceil(meta.total / 20) : 1
+  const totalPages = meta ? Math.ceil(meta.total / 100) : 1
 
   const selectCategory = (key: ReportCategory) => {
     setCategory(key)
     setPage(1)
   }
+
+  const columnReports = (id: BoardColumn): Report[] =>
+    reports
+      .filter((r) => r.report_type === id)
+      .sort((a, b) => (a.period_start < b.period_start ? 1 : -1))
 
   return (
     <div className="space-y-6">
@@ -103,57 +117,85 @@ export function ReportsPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center h-64">Loading...</div>
+      ) : reports.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            No reports yet. Click a generate button to create one.
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid gap-4">
-          {reports.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                No reports in this category yet. Click a generate button to create one.
-              </CardContent>
-            </Card>
-          ) : (
-            reports.map((report) => (
-              <Card key={report.id}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-lg">{report.title}</CardTitle>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      report.status === 'completed' ? 'bg-green-100 text-green-800' :
-                      report.status === 'generating' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {report.status}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                      disabled={deleteMutation.isPending}
-                      onClick={() => deleteMutation.mutate(report.id)}
-                    >
-                      Delete
-                    </Button>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+          {BOARD_COLUMNS.map((col) => {
+            const items = columnReports(col.id)
+            return (
+              <div
+                key={col.id}
+                className="rounded-xl border border-border bg-muted/40 p-3 min-h-[240px] flex flex-col"
+              >
+                <div className="flex items-center justify-between px-1 pb-3">
+                  <div>
+                    <div className="text-sm font-semibold">
+                      {col.label}
+                      <span className="ml-2 text-[10px] font-normal text-muted-foreground">
+                        {col.hint}
+                      </span>
+                    </div>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-4 text-sm text-muted-foreground">
-                    <span>Type: {report.report_type}</span>
-                    <span>Period: {new Date(report.period_start).toLocaleDateString()} ~ {new Date(report.period_end).toLocaleDateString()}</span>
-                    <span>Generated: {new Date(report.generated_at).toLocaleString()}</span>
-                  </div>
-                  {report.summary && (
-                    <pre className="mt-3 p-3 bg-muted rounded-md text-xs overflow-x-auto">
-                      {report.summary}
-                    </pre>
+                  <span className="px-2 py-0.5 rounded-full bg-background border border-border text-[10px] text-muted-foreground">
+                    {items.length}
+                  </span>
+                </div>
+                <div className="space-y-2 flex-1">
+                  {items.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border p-4 text-center text-[11px] text-muted-foreground">
+                      No {col.label.toLowerCase()} reports
+                    </div>
+                  ) : (
+                    items.map((report) => (
+                      <Card
+                        key={report.id}
+                        className="cursor-pointer hover:shadow-md transition-shadow"
+                        onClick={() => navigate(`/reports/${report.id}`)}
+                      >
+                        <CardHeader className="px-3 py-2.5 pb-1">
+                          <CardTitle className="text-sm leading-snug">
+                            {report.title}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-3 pb-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] ${
+                                STATUS_STYLES[report.status] ?? 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {report.status}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(report.generated_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {new Date(report.period_start).toLocaleDateString()} ~{' '}
+                            {new Date(report.period_end).toLocaleDateString()}
+                          </div>
+                          {report.summary && (
+                            <div className="text-[11px] text-muted-foreground line-clamp-2">
+                              {report.summary}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))
                   )}
-                </CardContent>
-              </Card>
-            ))
-          )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {meta && meta.total > 20 && (
+      {meta && meta.total > 100 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
             Showing {reports.length} of {meta.total} reports

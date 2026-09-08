@@ -58,6 +58,7 @@ async fn main() -> Result<()> {
         .route("/api/v1/ml/fp-labels", get(aads_api::handlers::ml::list_fp_labels))
         .route("/api/v1/ml/fp-predict", get(aads_api::handlers::ml::predict_current_stats))
         .route("/api/v1/detections", get(aads_api::handlers::detections::list_detections))
+        .route("/api/v1/detections/histogram", get(aads_api::handlers::detections::list_detections_histogram))
         .route("/api/v1/detections/{id}", get(aads_api::handlers::detections::get_detection).patch(aads_api::handlers::detections::update_detection))
         .route("/api/v1/logs/ingest", axum::routing::post(aads_api::handlers::ingest::ingest_logs))
         .route("/api/v1/logs", get(aads_api::handlers::logs::search_logs))

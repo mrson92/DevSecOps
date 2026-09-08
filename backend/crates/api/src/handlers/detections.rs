@@ -1,5 +1,6 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
+use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -20,6 +21,7 @@ pub struct DetectionFilterParams {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub tactic: Option<String>,
+    pub interval: Option<u64>,
 }
 
 pub async fn list_detections(
@@ -103,6 +105,89 @@ pub async fn list_detections(
             "page": page,
             "size": size,
             "total": total.0
+        }
+    })))
+}
+
+pub async fn list_detections_histogram(
+    State(state): State<AppState>,
+    Query(params): Query<DetectionFilterParams>,
+) -> Result<Json<Value>, AppError> {
+    let interval = params.interval.unwrap_or(3600).clamp(10, 86400 * 7);
+
+    let now = Utc::now();
+    let default_from = (now - Duration::days(7)).to_rfc3339();
+
+    let from = params
+        .start_date
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_from);
+    let to = params
+        .end_date
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| now.to_rfc3339());
+
+    let mut conditions = vec!["re.detected_at >= ? AND re.detected_at <= ?".to_string()];
+    let mut bind_values: Vec<String> = vec![from, to];
+
+    if let Some(ref status) = params.status {
+        conditions.push("re.status = ?".to_string());
+        bind_values.push(status.clone());
+    }
+    if let Some(ref rule_id) = params.rule_id {
+        conditions.push("re.rule_id = ?".to_string());
+        bind_values.push(rule_id.clone());
+    }
+    if let Some(ref severity) = params.severity {
+        conditions.push("r.severity = ?".to_string());
+        bind_values.push(severity.clone());
+    }
+    if let Some(ref tactic) = params.tactic {
+        conditions.push("r.mitre_tactics LIKE ?".to_string());
+        bind_values.push(format!("%{}\"%", tactic));
+    }
+
+    let needs_rules_join = params.severity.is_some() || params.tactic.is_some();
+    let join_clause = if needs_rules_join {
+        " JOIN rules r ON re.rule_id = r.id"
+    } else {
+        ""
+    };
+
+    let where_clause = format!("WHERE {}", conditions.join(" AND "));
+
+    // detected_at 문자열(ISO8601)을 epoch 초로 변환해 버킷 계산 후 다시 버킷 시작 시각을 반환한다.
+    // strftime('%s', ...)의 %s는 sqlx ? 파라미터 파싱과 충돌할 수 있어
+    // % 없는 julianday 기반 epoch 변환((julianday - 2440587.5) * 86400)을 사용한다.
+    let query_str = format!(
+        "SELECT CAST((julianday(re.detected_at) - 2440587.5) * 86400.0 AS INTEGER) AS ts, COUNT(*) AS cnt \
+         FROM rule_executions re {} {} \
+         GROUP BY ts / ? \
+         ORDER BY ts ASC",
+        join_clause, where_clause
+    );
+
+    let mut query = sqlx::query_as::<_, (i64, i64)>(&query_str);
+    for val in &bind_values {
+        query = query.bind(val);
+    }
+    query = query.bind(interval as i64);
+
+    let rows = query.fetch_all(&state.db).await?;
+
+    let mut buckets: Vec<Value> = Vec::new();
+    for (ts, count) in rows {
+        let bucket_start = (ts / interval as i64) * interval as i64;
+        buckets.push(json!({ "ts": bucket_start, "count": count }));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": buckets,
+        "meta": {
+            "interval": interval,
         }
     })))
 }

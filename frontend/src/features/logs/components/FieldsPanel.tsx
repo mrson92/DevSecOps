@@ -106,34 +106,6 @@ export function FieldsPanel({
     return name.includes(fq) || std.includes(fq) || shortType(f.type).toLowerCase().includes(fq)
   })
 
-  const toggle = () => {
-    setCollapsed((prev) => {
-      try {
-        localStorage.setItem(COLLAPSED_KEY, prev ? '0' : '1')
-      } catch {
-        /* ignore */
-      }
-      return !prev
-    })
-  }
-
-  if (collapsed) {
-    return (
-      <Card className="w-9 shrink-0 flex flex-col items-center py-2">
-        <button
-          onClick={toggle}
-          title="Expand fields"
-          className="p-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        >
-          <span aria-hidden>»</span>
-        </button>
-        <span className="mt-2 text-[10px] text-muted-foreground [writing-mode:vertical-rl] rotate-180">
-          Fields
-        </span>
-      </Card>
-    )
-  }
-
   const { data: valuesData, isFetching: isValuesFetching } = useQuery<FieldValuesResponse>({
     queryKey: ['logs-field-values', datasource, selected?.name, valueQ, from, to],
     enabled: !!selected,
@@ -153,10 +125,38 @@ export function FieldsPanel({
   const maxCount = values.length > 0 ? Math.max(...values.map((v) => v.count)) : 0
   const spec = selected ? matchSpec(selected) : undefined
 
+  const toggle = () => {
+    setCollapsed((prev) => {
+      try {
+        localStorage.setItem(COLLAPSED_KEY, prev ? '0' : '1')
+      } catch {
+        /* ignore */
+      }
+      return !prev
+    })
+  }
+
   const openField = (f: DatasourceField) => {
     setSelected(f)
     setValueInput('')
     setValueQ('')
+  }
+
+  if (collapsed) {
+    return (
+      <Card className="w-9 shrink-0 flex flex-col items-center py-2">
+        <button
+          onClick={toggle}
+          title="Expand fields"
+          className="p-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <span aria-hidden>»</span>
+        </button>
+        <span className="mt-2 text-[10px] text-muted-foreground [writing-mode:vertical-rl] rotate-180">
+          Fields
+        </span>
+      </Card>
+    )
   }
 
   return (
